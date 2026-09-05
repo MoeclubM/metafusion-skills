@@ -6,10 +6,10 @@
 
 | 技能 | 路径 | 说明 |
 |---|---|---|
-| **metafusion-curator** | [`skills/metafusion-curator/`](skills/metafusion-curator/SKILL.md) | MetaFusion 权威编目与元数据审查规范：实体编目操作技能，涵盖纯标题铁律、IFLA LRM 五层实体模型、多源导入、发行层级、关系 DAG 拓扑、封面画幅、i18n 回退链与不可篡改审计流（含 4 份 reference 附属文档）。 |
-| **lrm-catalog-standards** | [`skills/lrm-catalog-standards/`](skills/lrm-catalog-standards/SKILL.md) | MetaFusion LRM 编目与发行版（Release）命名规范：基于 IFLA LRM 与 MusicBrainz 体系的跨媒介实体结构与发行版命名细分领域标准。 |
+| **metafusion-curator** | [`skills/metafusion-curator/`](skills/metafusion-curator/SKILL.md) | MetaFusion 权威编目与元数据审查规范：覆盖纯题名、LRM 层级、同作品载体边界、关系审查、封面、i18n、证据与写后核验（含当前实现契约和参考文档）。 |
+| **lrm-catalog-standards** | [`skills/lrm-catalog-standards/`](skills/lrm-catalog-standards/SKILL.md) | MetaFusion LRM 编目与发行版命名规范：按当前 Work / CanonicalEntry / Release / Medium / Track / TrackContent 边界处理跨媒介实体与发行版命名。 |
 
-两个技能互为补充：`metafusion-curator` 是全站编目审查总则，`lrm-catalog-standards` 是与之同步互补的发行版命名细分规范（其 SKILL.md 内含指向前者的相对链接）。
+两个技能互为补充：`metafusion-curator` 是全站编目审查总则，`lrm-catalog-standards` 是与之同步互补的发行版命名细分规范。两者都引用 `reference-runtime-contract.md`，遇到目标实例差异时以实例 OpenAPI、迁移和响应为准。
 
 ## 安装方式
 
@@ -26,4 +26,4 @@ cp -r metafusion-skills/skills/lrm-catalog-standards  <your-repo>/.cursor/skills
 
 ## 许可与来源
 
-内容原样迁移自 MetaFusion 主仓库 `.cursor/skills/`，遵循主仓库相应约定。
+技能初始内容迁移自 MetaFusion 主仓库 `.cursor/skills/`；当前文档按主仓库运行时契约持续校准，具体实例以其 OpenAPI、迁移和响应为准。

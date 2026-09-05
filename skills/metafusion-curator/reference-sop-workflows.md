@@ -1,124 +1,61 @@
-# MetaFusion 标准编目与数据录入 SOP 工作流 (Cataloging SOP)
+# MetaFusion 编目 SOP
 
-本文档为 AI Agent 与档案考据员提供严密、规范的数据创建与编辑操作流程。
+本流程适用于人工或 Agent 编目。它假设目标实例已经授权当前写入；只读审查可以执行到任意一步后结束。
 
----
+## 第一步：确认实例和工具
 
-## 阶段一：考据、检索与防重判定 (Research & Deduplication)
+确认 API 基址、认证状态、用户 locale 和目标版本。读取 OpenAPI（如提供）、taxonomy、relation-types 与相关实体详情。优先使用服务器返回的代码、名称和允许端点类型，不在脚本里复制一套静态词表。
 
-### 1.1 权威源检索与交叉比对
-在录入任何新内容前，必须通过权威数据库或官方出版物交叉验证并留存证据链接：
-- **图书/文献/漫画**：ISBN 官方分配库、国图 CIP、NDL（日本国会图书馆）、豆瓣读书、各大出版社官网（新星、上海译文等）；
-- **音乐/唱片/原声**：MusicBrainz、VGMdb、Discogs、Oricon、网易云/Apple Music/Tidal 官方条目；
-- **动画/电影/剧集**：TMDB、Bangumi、AniList、IMDb、文化厅媒体艺术数据库、出品方官网（如东宝、吉卜力官网）；
-- **游戏**：VNDB、IGDB、Steam、PlayStation Store、Nintendo eShop。
+## 第二步：来源与查重
 
-### 1.2 全库检索防重
-调用平台搜索接口：
-```bash
-GET /api/v1/search?q={关键词}&type=all
-```
-- **情况 A (完全存在)**：若目标作品 Work 已存在，切勿重复创建 Work。仅需在其下新建 Release 或补充缺失的 Translations / Tags / Relations。
-- **情况 B (部分存在/别名)**：比对原名与别名，若存在拼写变体，更新现有 Work 的 `aliases` 与 `translations`。
-- **情况 C (确属新作品)**：进入阶段二创建全套结构。
+对每个事实记录来源：
 
----
+- Work 身份：官方作品页、出版社、制作委员会、发行厂牌、国家图书馆或权威数据库；
+- Release：官方发行页、目录、条码/ISBN、品番和包装照片；
+- CanonicalEntry：官方章节/分集/曲目目录或可核验母版信息；
+- 关系：双方实体的官方关系说明或可信数据库。
 
-## 阶段二：纯净题名与多语言构建 (Pure Title & i18n)
+按原题名、原文题名、别名、条码、品番和外部 ID 查询。已有 Work 只补缺失层级；同名但不同创作母体需要证据支持后才分开。
 
-### 2.1 纯净题名清洗原则
-- **输入**：“【1080P/BD】进击的巨人 Season 1 最终重制版 [01-25]”
-- **处理步骤**：
-  1. 剥离画质与载体（1080P/BD）→ 移入 Release / Medium 载体属性；
-  2. 剥离分季与卷次（Season 1）→ 移入 Release `edition_name`；
-  3. 剥离版本说明（最终重制版）→ 移入 Release `packaging` / `edition_name`；
-  4. 剥离集数分轨（[01-25]）→ 展开为 25 条 Tracks；
-  5. **最终 Work 题名**：`进击的巨人` (日文原名: `進撃の巨人`)。
+## 第三步：先建模再写载荷
 
-### 2.2 多语言本地化回退链构建 (i18n Fallback)
-创建或更新实体时必须提供 `original_language`，并在 `translations` 中提供多语言对齐：
-```json
-[
-  { "locale": "zh-CN", "title": "流浪地球", "summary": "太阳即将毁灭，人类在地球表面建造出巨大的推进器..." },
-  { "locale": "zh-TW", "title": "流浪地球", "summary": "太陽即將毀滅，人類在地球表面建造出巨大的推進器..." },
-  { "locale": "en-US", "title": "The Wandering Earth", "summary": "The sun is dying out, people around the globe build giant planetary thrusters..." }
-]
-```
+把输入拆成 Work、CanonicalEntry、Release、Medium、Track 和 TrackContent：
 
----
+1. Work 只放纯题名、原始语言、基础简介、标签和创作主体。
+2. CanonicalEntry 只放同一 Work 的表达、分集、章节或母版；有来源才创建篇目，不从卷数推造章节。
+3. Release 只在有真实发行证据时创建，填 edition_name、edition_date、publisher_id、barcode、catalog_number、packaging、distribution_channel 和发行版翻译。
+4. Medium 按实际包装建立，填 position、name、format、media_category、role。
+5. Track 按实际位置建立，填 medium_id、position、title、duration_seconds、ISRC、locator 和必要的兼容 work_id。
+6. 一个 Track 可通过 contents 收录多个 CanonicalEntry；每个项填 canonical_entry_id、position 和 locator。单内容旧字段与 contents 不能互相冲突。
 
-## 阶段三：LRM 录音分层与发行版树状建模 (Work -> Entry -> Release -> Medium -> Track)
+当前数据库要求 Track 与 TrackContent 属于 Release.work_id 的同一 Work。多作品盒装不能通过伪造 work_id 或直接 SQL 绕过；没有 Compilation 模型时标记模型缺口。
 
-### 3.1 词曲创作 (Work) 与 录音演职 (Recording) 分离录入
-1. **在 Work 级绑定创作人**：
-   - 歌曲《晴天》Work：`composer` -> 周杰伦，`lyricist` -> 周杰伦；
-2. **在 CanonicalEntry 级绑定录音制作人**：
-   - 《晴天 (Master Recording)》CanonicalEntry：`performer` -> 周杰伦，`arranger` -> 赖伟锋/周杰伦，`producer` -> 周杰伦，`phonographic_copyright` -> 杰威尔音乐；
-3. **在 Track 级关联物理分轨与 CanonicalEntry**：
-   - Track 绑定该 `canonical_entry_id`，实现跨发行版本自由复用。
+## 第四步：题名、翻译和封面预检
 
-### 3.2 发行版 Release 命名标准
-- **实体图书**：`{作品名} {卷号}：{卷副题名}（{装帧规格}，{出版社}，ISBN {ISBN-13}）`
-  - 例：`宿命之环 1：宿命之环（初版平装单行本，新星出版社，ISBN 9787513352887）`
-- **网络连载**：`{作品名}（{平台名}官方数字连载·完结典藏版）`
-  - 例：`诡秘之主（起点中文网官方数字连载·完结典藏版）`
-- **音乐唱片**：`{专辑名}（{盘种/规格}，{唱片编号/厂牌}）`
-  - 例：`攻壳机动队 原声大碟（初回限定盘 CD，VICL-60017，Victor Entertainment）`
-- **影视影碟**：`{作品名} {分季/分卷}（{规格/包装}，{发行厂牌}，{品番}）`
-  - 例：`千与千寻（日本院线官方初版蓝光，VWBS-1530，Walt Disney Studios Japan）`
+- 清除 Work 题名中的季数、盘号、卷号、规格、画质、音质、包装和字幕组信息；只有确实是独立创作实体时才保留在新 Work。
+- Work / Artist / Franchise 翻译用数组；Release、Medium、Track、CanonicalEntry 按当前实现契约使用 JSON 对象。每个翻译字段都使用合法 locale。
+- 按实例规则设置 cover_aspect。当前服务端允许 1:1、2:3、3:4、4:3 和空值自动推断；前三种是常见编目建议，不要伪造接口拒绝行为。
+- 外部封面 URL 需通过服务端安全校验；优先持久化到对象存储，并核对图片来自官方或授权来源。
 
-### 3.3 多作品全集盒装 (Multi-Work Boxset) 录入实操
-**案例：宮崎駿監督作品集 13BD 大盒装 (`VWBS-1531`)**
-1. 创建汇编 Work：《宮崎駿監督作品集》；
-2. 创建 Release：《宮崎駿監督作品集（13BD 豪华限定盒装，VWBS-1531，Walt Disney Studios Japan）》；
-3. 建立 13 个 Medium：
-   - `Medium 1`: `format="Blu-ray"`, `name="Disc 1: ルパン三世 カリオストロの城"`
-   - `Medium 8`: `format="Blu-ray"`, `name="Disc 8: 千と千尋の神隠し"`
-4. 将 Medium 8 的 Track 关联至母作品《千与千寻》的电影母版；
-5. 在图谱中建立 `included_in` 边连接《千与千寻》与《宮崎駿監督作品集》；
-6. 严格检查：单部作品《千与千寻》**绝不能**填写 `VWBS-1531`，其独立单行本为 `VWBS-1530`。
+## 第五步：选择写入路径
 
----
+优先使用可单独核对和审计的粒度端点：
 
-## 阶段四：跨媒介企划与 DAG 拓扑图谱构建 (Franchise & DAG Edges)
+- Work：POST /catalog/works，更新用 PUT /catalog/works/:id；
+- CanonicalEntry：POST /catalog/canonical-entries，更新用 PUT /catalog/canonical-entries/:id；
+- Release：POST /catalog/releases，更新用 PUT /catalog/releases/:id；
+- Medium：POST /catalog/mediums，更新用 PUT /catalog/mediums/:id；
+- Track：POST /catalog/tracks，更新用 PUT /catalog/tracks/:id；
+- 关系：先读取 /catalog/relation-types，再使用实例支持的关系端点。
 
-### 4.1 企划聚合
-对于《流浪地球》或《三体》：
-1. 创建或获取 `Franchise` 实体（如 `流浪地球系列企划`）；
-2. 将原著小说、第一部电影、第二部电影、原声大碟等通过 `part_of_franchise` 关联至该企划。
+每次提交准备具体 edit_note 和相关 HTTP(S) source_urls。CanonicalEntry、Release、Medium、Track 的成员路径会验证证据；Work 创建和通用关系路径在部分版本中未强制证据，因此代理仍应自行预检并在结果中报告服务器差异。POST /catalog/submit 只作为兼容导入路径，不能假定它接收审计字段或提供全量事务。
 
-### 4.2 语义关系边织网
-- 小说与电影：`电影1 adaptation_of 原著小说`；
-- 电影与前传：`电影2 prequel_of 电影1`（或 `电影1 sequel_of 电影2`，单向选择保持 DAG）；
-- 电影与原声带：`原声大碟 soundtrack_of 电影1`；
-- 联动作品：`A crossover_with B`；
-- 角色与声优：`声优 voice_actor_of (qualifier="ja") 角色`，`角色 character_in 作品`。
+## 第六步：按依赖顺序提交
 
----
+按 Work → CanonicalEntry → Release → Medium → Track → TrackContent 的依赖顺序提交。每个阶段都读取响应并保存 ID；失败时停止后续写入，不用默认值填补缺失来源。关系边在两端实体存在后提交，并使用 qualifier 区分同一对实体的不同语义。
 
-## 阶段五：封面与多媒体资产鉴伪校准 (Cover QA & Ingestion)
+## 第七步：写后验证与报告
 
-### 5.1 封面画幅与分辨率匹配
-- **音乐 (1:1)**：正方形高清扫描件（推荐 ≥ 1400×1400）；
-- **动画/电影 (2:3)**：竖版官方宣发海报（推荐 ≥ 1000×1500）；
-- **出版物/漫画 (3:4)**：书面扫描件（推荐 ≥ 1200×1600）。
+重新读取目标 Work、内容目录、Release、Medium、Track、关系和 revisions。检查 Work 归属、父子边界、position、TrackContent、翻译回退、封面比例和审计记录。关系审查还要检查自环、端点类型、启用状态、反向重复和层级边长路径；服务端响应成功不等于所有图路径都已经证明无环。
 
-### 5.2 资源托管与防伪
-- 将图片上传至 MetaFusion RustFS/S3 对象存储，获得持久化 URL；
-- 坚决杜绝带有其他盗版网站水印、占位图、带腰封折痕图或剧照拼接图。
-
----
-
-## 阶段六：不可篡改版本快照与审计日志 (Audit & Snapshot)
-
-每一次数据变更，必须在请求 Payload 中附带审计元数据：
-```json
-{
-  "edit_note": "根据讲谈社官方最新出版目录，添加第 34 卷完结单行本 Release 及对应 ISBN-13 与分盘曲目",
-  "source_urls": [
-    "https://kc.kodansha.co.jp/product?item=0000352227"
-  ]
-}
-```
-- 若 `edit_note` 为空或泛泛而谈（如 "update"），审查系统将自动拦截；
-- `source_urls` 必须为有效合法的公开网络 URL。
+报告使用以下四种结果：通过、需补证据、需修正、实现缺口。每项写明实体、字段、证据、影响和下一步。
