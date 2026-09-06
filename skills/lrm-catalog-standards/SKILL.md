@@ -7,6 +7,14 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Work、Can
 
 本技能专注于“创作母体是什么”和“某个发行版如何承载它”的边界。全站编目流程、审查结论格式和当前 API 差异见 [metafusion-curator](../metafusion-curator/SKILL.md)；使用前先读其 [当前实现契约](../metafusion-curator/reference-runtime-contract.md)。
 
+## 先选择 API 版本
+
+请求目标实例 `/api/v2/openapi.json` 和 `/api/v2/catalog/definitions`。确认是 v2 后，使用 [v2 编目契约](../metafusion-curator/reference-v2-contract.md)，下文 v1 的 CanonicalEntry、单作品发行、数组翻译和 `source_urls` 规则不适用。只有确认目标实例运行 v1 时才使用以下旧版流程。不要在版本不明时尝试写入。
+
+本技能也适用于 v2 的 Agent、Collection、ContentUnit、Expression 与跨作品收录；核心种类固定，动态代码从已发布定义取得。
+
+## 以下为 v1 契约
+
 ## LRM 层级
 
 | 层级 | 语义 | 典型字段 |

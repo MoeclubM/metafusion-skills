@@ -7,6 +7,14 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
 
 本技能把考据结论安全地落到 MetaFusion 的当前数据模型中。它支持读操作、审查和已获授权的写操作，不替用户扩大写入范围，也不为绕过服务端约束而直接修改数据库。
 
+## 先选择 API 版本
+
+请求目标实例 `/api/v2/openapi.json` 和 `/api/v2/catalog/definitions`。确认是 v2 后，使用 [v2 编目契约](reference-v2-contract.md)，下文 v1 的 CanonicalEntry、单作品发行、数组翻译和 `source_urls` 规则不适用。只有确认目标实例运行 v1 时才使用以下旧版流程。不要在版本不明时尝试写入。
+
+本技能也适用于 v2 的 Agent、Collection、ContentUnit、Expression 与跨作品收录；核心种类固定，动态代码从已发布定义取得。
+
+## 以下为 v1 契约
+
 ## 先确认运行时口径
 
 1. 读取 [当前实现契约](reference-runtime-contract.md)。如果目标实例提供 /api/v1/openapi.json、/catalog/taxonomy 或 /catalog/relation-types，先以实例响应和实际 API 为准。
