@@ -1,6 +1,7 @@
 # MetaFusion 编目质检清单
 
-按目标实例的 OpenAPI、taxonomy、relation-types 和 [当前实现契约](reference-runtime-contract.md) 执行。未执行的项目标记为“未核验”，不要写成已通过。
+按目标实例的 `GET /api/openapi.json`、`GET /api/catalog/definitions` 和
+[当前实现契约](reference-runtime-contract.md) 执行。未执行的项目标记为"未核验"，不要写成已通过。
 
 ## 身份与查重
 
@@ -8,45 +9,54 @@
 - [ ] 已证明这是新的 Work，或明确说明为何复用已有 Work。
 - [ ] Work 题名没有季数、卷号、盘号、规格、画质、音质、包装、出版社或字幕组污染。
 - [ ] 别名和外部 ID 没有把另一版本伪装成独立创作实体。
+- [ ] 责任主体落在 `agent`（没有沿用旧的 `artist` / `franchise` 实体名）。
 
-## 层级和归属
+## 层级与归属
 
-- [ ] CanonicalEntry 属于正确 Work，parent_id 指向同一 Work；已有篇目没有被迁移到别的 Work。
-- [ ] Release 属于一个 Work，版名和字段来自真实发行证据。
-- [ ] Medium 属于正确 Release；数量、position、format、media_category 和 role 与包装一致。
-- [ ] Track 属于正确 Medium；position 唯一且 title / duration_seconds / ISRC / locator 与来源一致。
-- [ ] TrackContent 的 canonical_entry_id 都属于 Track 所属 Release 的同一 Work，position 不冲突，locator 有实际定位意义。
-- [ ] legacy canonical_entry_id 与 contents 没有互相矛盾。
-- [ ] AssetFile 的哈希、对象键和处理状态位于资产层，没有污染内容题名。
+- [ ] `content_unit` / `expression` 属于正确 Work；`content_unit` 的 `parent_id` 指向同一 Work。
+- [ ] `expression` 没有误填 `parent_id`（该 kind 只允许 `work_id` 与 `content_unit_id`）。
+- [ ] `medium` 属于正确 Release，`track` 属于正确 Medium；`position` 与实体顺序一致且不冲突。
+- [ ] `release` 上没有 `work_id`，且 `subjects` **覆盖了它实际收录表达的全部 Work**。
+- [ ] `subjects[].role` 取自 `release_role` 词表（`primary` / `compilation` / `supplement`），
+      同一 `(work_id, role)` 没有重复。
+- [ ] `track.contents` 的 `expression_id` 都真实存在且可见；同一 Track 内 `position` 唯一。
+- [ ] 同一 Expression 在同一 Track 的多次出现确实对应不同 locator（相同 expression + 相同 locator 属重复收录）。
+- [ ] 没有使用已退役的 `canonical_entry_id`、`edition_name`、`cover_aspect` 等旧字段名。
+- [ ] 文件哈希、对象键与下载地址位于存储服务，没有污染题名或动态字段。
 
 ## 盒装与合集
 
-- [ ] 单部 Work 没有挂载多作品全集的 catalog_number 或 barcode。
-- [ ] 已核对实例是否支持 Compilation / 汇编模型。
-- [ ] 如果不支持跨 Work Track / TrackContent，已将物理盒装映射标为模型缺口，没有用 SQL 或伪造 work_id 绕过。
-- [ ] 没有从卷数、盘数或发行数量推造未被来源证明的 CanonicalEntry。
+- [ ] 单部 Work 没有挂载多作品全集的品番或条码。
+- [ ] 多作品盒装按"汇编 Work + `subjects` 声明各作品"建模，没有伪造 `work_id` 或改库绕过校验。
+- [ ] 系列/企划世界观用 `collection` + `includes` 表达，没有为作者个人作品全集硬建企划。
+- [ ] 没有从卷数、盘数或发行数量推造未被来源证明的 `content_unit` / `expression`。
 
 ## 关系图
 
-- [ ] 关系类型已从 relation-types 读取且处于启用状态。
-- [ ] source / target 实体真实存在且端点类型被允许。
+- [ ] 关系类型取自 `GET /api/catalog/definitions` 的 `relations` 且处于启用状态
+      （`/api/catalog/relation-types` 不存在）。
+- [ ] source / target 实体真实存在，且各自的 kind 与业务类型在该关系允许范围内。
 - [ ] 没有自环、错误反向边或把同一人物拆成多个实体。
-- [ ] 同一对实体的同类多边使用 qualifier；时间字段符合 relation type 的语义。
-- [ ] 层级关系没有闭环。对大出度、并发写入或已知实现限制，已在报告中说明“仅完成局部核验”。
+- [ ] 同一对实体的同类多边用 `position` 与 `attributes` 区分（如声优多角色用多条 `voiced_by`）。
+- [ ] 声明为 acyclic 的层级关系没有闭环；大出度或并发写入场景下只声明"局部已核验"。
 
-## 翻译和封面
+## 翻译与封面
 
-- [ ] Work / Artist / Franchise 的翻译数组使用合法 locale、题名和简介字段。
-- [ ] Release / Medium / Track / CanonicalEntry 使用当前实现契约规定的 JSON 对象形状，没有把数组形状跨层复制。
-- [ ] 回退顺序为请求 locale → en-US → original_language → 基础字段。
-- [ ] 标签、角色、关系类型、格式和包装名称来自 taxonomy / relation-types 的多语言结果。
-- [ ] cover_aspect 与图片真实比例匹配。当前实例允许 1:1、2:3、3:4、4:3 或自动推断；前三种只是常用建议。
-- [ ] 封面来自可核实的官方或授权来源，无占位图、拉伸和水印；外部 URL 已通过实例安全校验。
+- [ ] 所有实体的 `translations` 都是**对象**（按 locale 分组，含 `title` / `summary` / `aliases`），
+      没有把旧版的数组形状复制进来。
+- [ ] 回退顺序为请求 locale → `en-US` → `original_language` → 基础 `title`，展示值没有回写基础题名。
+- [ ] 发布的实体至少有一条翻译（否则服务端返回 `translation_required`）。
+- [ ] 标签、角色、关系类型、载体格式等代码来自 definitions / 词表，没有硬编码术语。
+- [ ] `pictures[].url` 是绝对 HTTP(S) 地址（相对路径会被判 `invalid_picture`），
+      `source` 满足证据规则；封面来自可核实的官方或授权来源，无占位图、拉伸和水印。
+- [ ] 画幅比例若写入，位于实例定义声明的字段下；没有提交顶层 `cover_aspect`。
 
-## 审计和写后验证
+## 证据、并发与写后验证
 
-- [ ] 每次变更都有具体 edit_note 和相关 HTTP(S) source_urls。
-- [ ] 已确认目标端点是否真正保存 revision 和 admin audit；不能从接口成功响应推断审计完整。
-- [ ] 已重新读取写入实体及其父子关联。
-- [ ] 已检查 revisions 中的 before / after / diff、编辑者、来源和状态。
+- [ ] 每次变更都有具体 `edit_note` 和至少一个 `sources` 项（`kind` 为 `url` / `publication` / `self`）。
+- [ ] 更新前已 GET 完整实体并带回未修改字段（PUT 是整实体替换，不是局部 PATCH）。
+- [ ] 更新带了正确的 `expected_version`；409 `version_conflict` 时已回读再重放。
+- [ ] 已重新读取实体、`relations`、`occurrences` 与 `revisions`。
+- [ ] 已核对 revisions 中的 before / after / 编辑者 / 来源，确认未请求修改的数据没有丢失。
+- [ ] 没有声称这些接口提供全量事务或全库 DAG 证明——结论限定在本次写入与已复核的局部。
 - [ ] 报告将结果归类为通过、需补证据、需修正或实现缺口，并列出实体和字段。
