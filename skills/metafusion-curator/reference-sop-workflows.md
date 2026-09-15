@@ -1,7 +1,7 @@
 # MetaFusion 编目 SOP
 
 本流程适用于人工或 Agent 编目。它假设目标实例已经授权当前写入；只读审查可以执行到任意一步后结束。
-所有写入都在 `/api/catalog/*`（**无版本前缀**）；涉及的子系统边界见 [子系统边界](reference-service-boundaries.md)。
+所有写入都在 `/api/catalog/*`（**无版本前缀**）；涉及的系统归属见 [接口归属与写入范围](reference-endpoint-scope.md)。
 
 ## 第一步：确认实例和工具
 
@@ -33,7 +33,7 @@
 5. **Medium** 按实际包装建立，填 position、名称与载体规格字段。
 6. **Track** 按实际位置建立，用 `contents` 的 `expression_id` / `position` / `locator` 表达收录。
 
-多作品盒装**不再标为模型缺口**：按 [LRM 架构参考](reference-lrm-architecture.md) 建汇编 Work + `subjects`，
+多作品盒装**不再标为模型缺口**：按 [实体与层级数据模型](reference-data-model.md) 建汇编 Work + `subjects`，
 不要伪造 `work_id` 或用直接 SQL 绕过 `undeclared_release_subject`。
 
 ## 第四步：题名、翻译和封面预检

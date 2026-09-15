@@ -1,12 +1,11 @@
-# MetaFusion 子系统边界
+# 接口归属与写入范围（面向 Agent）
 
-本文件说明编目写入所依赖的各运行单元各自拥有什么、不拥有什么，以及跨系统交互的唯一合法通道。
-契约来源是主仓库 `docs/architecture/service-split-migration.md`（唯一契约来源）与各服务仓库的 README 和源码。
+站点由若干系统组成，但**编目只需要认路径前缀**：哪些前缀属于元数据目录、哪些属于别的系统。
+本文件只讲"我能调什么、该往哪里写"。
 
-## 运行单元与路由归属
+## 路径前缀与职责
 
-| 运行单元 | 拥有数据（schema） | 对外路径前缀 | 仓库 |
-| --- | --- | --- | --- |
+| 系统 | 对外路径前缀 |
 | 元数据目录 catalog | 八类实体、动态定义、关系、结构、修订、检索、货架、外部权威库（`catalog.*`） | `/api/catalog/*`、`/api/importer/*`、`/api/openapi.json` | MetaFusion |
 | 账号 auth | 用户、会话、OAuth 客户端/授权码/令牌、RSA 密钥（`auth.*`） | `/api/setup`、`/api/auth/*`、`/api/admin/users*`、`/api/oauth/*`、`/api/oidc/jwks`、`/api/.well-known/openid-configuration` | metafusion-auth |
 | 互动 community | 论坛板块/主题/回复/标签、条目短评、收藏、互动记录（`community.*`） | `/api/community/*`、`/api/favorites/*`、`/api/records/*`、`/api/users/{id}/favorites` | metafusion-community |
@@ -28,21 +27,19 @@
 - **存储**：物理文件与哈希、直传、绑定、下载与预览。它**不保存**目录结构（不复制作品/专辑/曲目表），
   目录**不保存**对象存储物理路径。
 
-## 跨系统交互规则
+## 判定与引用规则
 
-- 每个服务只读写自己的 schema；**禁止跨库 JOIN**。
-- 服务间只通过 **HTTP 契约**交互；**禁止复制对方的表**——不复制作品/专辑/曲目表，也不把对方的实体可见性结论落库缓存。
-- 判定"实体是否存在/是否可见"必须问目录：`GET /api/catalog/entities/{id}`。互动与存储都只调这一条
-  （互动另用 `GET /api/catalog/entities/{id}/relations` 取关系邻居），可见性规则只有目录一处实现；非 200 一律按"不存在"处理。
-- 令牌只在账号服务签发，其余服务**只验签**（RS256 + JWKS），只信 `sub` / `preferred_username` / `role`。
-- 实体合并（`entity.merged`）会改写引用：裸 UUID 引用要用 `GET /api/catalog/entities/{id}/resolve` 解析当前身份，
-  不要假定 ID 永久有效。跨服务的合并事件消费仍在演进，写入前应重新解析而不是信本地缓存。
-- 迁移期例外：`/api/archive|playback|media` 与 `/api/community|records|favorites` 目前仍由单体（catalog）服务线上流量，
-  网关按前缀切换；**编目写入始终走 `/api/catalog/*`**，不受切流影响。
+- 判定"实体是否存在 / 是否可见"必须问目录：`GET /api/catalog/entities/{id}`；取关系邻居用
+  `GET /api/catalog/entities/{id}/relations`。非 200 一律按"不存在"处理。
+- 不要自己维护"实体是否存在/是否可见"的台账（本地清单、缓存、派生表都算）：判定口径只有目录一处，
+  缓存会让判断与真实状态分叉。
+- 实体合并会改写引用：裸 UUID 引用先用 `GET /api/catalog/entities/{id}/resolve` 解析当前身份，
+  不要假定 ID 永久有效；写入前重新解析，不要信本地缓存。
+- 令牌由账号服务签发；调用编目接口时只需带上手里的令牌，接口按令牌判定你的权限。
 
 ## 与编目有关的三条判据
 
 1. 目标前缀属于目录（`/api/catalog/*`、`/api/importer/*`）才是编目写入；其余前缀不属于编目任务。
-2. 需要"这个实体存不存在/能不能看到"时调用目录的实体读接口，不要另建本地台账或复制一份表。
-3. 需要给文件登记用途时走存储服务（见 [存储契约要点](reference-storage-contract.md)）：
+2. 需要"这个实体存不存在 / 能不能看到"时调用目录的实体读接口，不要另建本地台账或复制一份。
+3. 需要给文件登记用途时走存储接口（见 [文件上传与绑定](reference-file-upload.md)）：
    哈希、对象键与下载地址都不进实体题名或动态字段。

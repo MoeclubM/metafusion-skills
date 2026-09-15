@@ -1,7 +1,7 @@
 # MetaFusion 编目质检清单
 
 按目标实例的 `GET /api/openapi.json`、`GET /api/catalog/definitions` 和
-[当前实现契约](reference-runtime-contract.md) 执行。未执行的项目标记为"未核验"，不要写成已通过。
+[API 行为参考](reference-api-behavior.md) 执行。未执行的项目标记为"未核验"，不要写成已通过。
 
 ## 身份与查重
 

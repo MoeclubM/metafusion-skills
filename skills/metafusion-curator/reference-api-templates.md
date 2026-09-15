@@ -1,7 +1,7 @@
 # MetaFusion API 载荷参考
 
 这是当前实现的最小载荷参考。提交前先读 `GET /api/openapi.json`、`GET /api/catalog/definitions`
-和 [当前实现契约](reference-runtime-contract.md)。认证、字段码与可用值以目标实例为准，**本项目没有 `/api/v1`、`/api/v2` 前缀**。
+和 [API 行为参考](reference-api-behavior.md)。认证、字段码与可用值以目标实例为准，**本项目没有 `/api/v1`、`/api/v2` 前缀**。
 
 ## 请求头与证据
 

@@ -7,7 +7,7 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Agent、Co
 
 本技能专注于"创作母体是什么"和"某个发行版如何承载它"的边界。
 全站编目流程、审查结论格式和当前 API 差异见 [metafusion-curator](../metafusion-curator/SKILL.md)；
-使用前先读其 [当前实现契约](../metafusion-curator/reference-runtime-contract.md)。
+使用前先读其 [API 行为参考](../metafusion-curator/reference-api-behavior.md)。
 
 ## 统一入口，没有版本前缀
 
@@ -30,7 +30,7 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Agent、Co
 
 没有独立的 `artist` / `franchise` 实体：创作者与机构落 `agent`，系列与世界观落 `collection`。
 物理文件不属于元数据：文件、哈希与绑定由存储服务管理，见
-[存储契约要点](../metafusion-curator/reference-storage-contract.md)。
+[文件上传与绑定](../metafusion-curator/reference-file-upload.md)。
 
 ## 命名和归属规则
 
@@ -84,8 +84,8 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Agent、Co
 ## 参考
 
 - [metafusion-curator](../metafusion-curator/SKILL.md)
-- [当前实现契约](../metafusion-curator/reference-runtime-contract.md)
-- [子系统边界](../metafusion-curator/reference-service-boundaries.md)
-- [存储契约要点](../metafusion-curator/reference-storage-contract.md)
-- [LRM 架构参考](../metafusion-curator/reference-lrm-architecture.md)
+- [API 行为参考](../metafusion-curator/reference-api-behavior.md)
+- [接口归属与写入范围](../metafusion-curator/reference-endpoint-scope.md)
+- [文件上传与绑定](../metafusion-curator/reference-file-upload.md)
+- [实体与层级数据模型](../metafusion-curator/reference-data-model.md)
 - [质量检查清单](../metafusion-curator/reference-qa-checklist.md)

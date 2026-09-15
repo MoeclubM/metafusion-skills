@@ -1,8 +1,8 @@
-# MetaFusion LRM 架构参考
+# 实体与层级数据模型（面向 Agent）
 
-本参考解释 MetaFusion 如何把作品内容与商业发行分开。当前固定实体骨架是八类
+站点把"创作内容"和"商业发行"分成两层来存。固定实体骨架是八类
 （`agent` / `collection` / `work` / `content_unit` / `expression` / `release` / `medium` / `track`），
-字段与服务器边界以 [当前实现契约](reference-runtime-contract.md) 为准。
+字段码与枚举以实例的 `GET /api/catalog/definitions` 为准（见 [API 行为参考](reference-api-behavior.md)）。
 
 ## 层级关系
 
@@ -27,7 +27,7 @@
 创作者与机构都落 `agent`，系列与世界观落 `collection`，署名与登场通过关系表达。
 
 物理文件不属于元数据：文件、sha256、对象存储键与绑定由**存储服务**管理
-（见 [存储契约要点](reference-storage-contract.md)）。文件哈希与处理状态不进 Work 或 Expression 的题名事实；
+（见 [文件上传与绑定](reference-file-upload.md)）。文件哈希与处理状态不进 Work 或 Expression 的题名事实；
 "收录在第几轨、什么时间码"留在目录侧的 `locator`，文件的用途由存储侧的 `binding_role` 表达。
 
 ## 关系与归属

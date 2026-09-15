@@ -13,13 +13,14 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
 1. 目标实例的统一入口是 `/api`。本项目**没有 `/api/v1`、`/api/v2` 版本前缀**；
    历史文档与第三方适配器里的 `/api/v1/catalog/works`、`/api/v2/catalog/entities` 一类路径**不存在**，
    版本不明时不要尝试写入。
-2. 读取 [当前实现契约](reference-runtime-contract.md)，再核对目标实例的 `GET /api/openapi.json`、
-   `GET /api/catalog/definitions` 和当前用户角色。示例中的字段名、枚举和事务语义都不能代替运行时验证。
-3. 发现技能文档、OpenAPI、处理器或已执行迁移不一致时，暂停有风险的写入，记录差异；不要猜测字段，也不要用 SQL 绕过约束。
+2. 读取 [API 行为参考](reference-api-behavior.md) 与 [API 错误码与修复动作](reference-api-errors.md)，
+   再核对目标实例的 `GET /api/openapi.json`、`GET /api/catalog/definitions` 和当前用户角色。
+   示例里的字段名与枚举不能代替运行时验证；写库被拒时先查错误码表再改载荷。
+3. 技能文档与实例响应不一致时，暂停有风险的写入并记录差异；不要猜字段，也不要绕过接口改库。
 
-## 子系统边界
+## 写入范围（只写目录）
 
-编目写入只发生在**元数据目录**（`/api/catalog/*`、`/api/importer/*`）。其余能力属于独立系统：
+编目写入只发生在**元数据目录**（`/api/catalog/*`、`/api/importer/*`）。其余前缀属于别的系统：
 
 - **账号 auth**（`/api/setup`、`/api/auth/*`、`/api/admin/users*`、`/api/oauth/*`、`/api/oidc/jwks`）：
   登录、会话、令牌与账号管理。业务权限（谁能编辑哪个实体）仍由目录判断。
@@ -28,9 +29,9 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
 - **存储 storage**（`/api/storage/*`）：物理文件、sha256、直传、绑定与下载。
 - **网关 gateway**：按前缀分流，前端调用点不因服务切换而改变。
 
-硬性规则：每个系统只读写自己的 schema，**禁止跨库 JOIN**；跨系统只通过 **HTTP 契约**交互，
-**禁止复制对方的表**（不复制作品/曲目表，也不缓存实体可见性结论）。判定"实体是否存在/是否可见"
-必须用 `GET /api/catalog/entities/{id}`。详见 [子系统边界](reference-service-boundaries.md)。
+硬性规则：判定"实体是否存在 / 是否可见"必须问目录：`GET /api/catalog/entities/{id}`
+（非 200 一律按不存在处理），不要另建本地台账或缓存可见性结论。
+详见 [接口归属与写入范围](reference-endpoint-scope.md)。
 
 ## 标准工作流
 
@@ -122,7 +123,7 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 作品/发行的文件本体不属于元数据。文件走存储服务：`POST /api/storage/upload/initiate`（命中 sha256 即秒传）
 → 预签名分片直传或 `PUT /api/storage/upload/stream/{asset_id}` → `POST /api/storage/bind` 用 `binding_role`
 表达用途。读取可见性是**上传者或任一绑定目标可见即可读**，下载、预览与哈希校验共用同一判定。
-不要把哈希、对象键或下载地址写进实体字段。详见 [存储契约要点](reference-storage-contract.md)。
+不要把哈希、对象键或下载地址写进实体字段。详见 [文件上传与绑定](reference-file-upload.md)。
 
 ## 多语言与封面约束
 
@@ -142,10 +143,11 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 
 ## 进一步参考
 
-- [当前实现契约](reference-runtime-contract.md)：统一 `/api` 前缀、八类实体边界、翻译形状、写入校验与端点差异。
-- [子系统边界](reference-service-boundaries.md)：目录 / 账号 / 互动 / 存储各自拥有什么，跨系统只走 HTTP 契约。
-- [存储契约要点](reference-storage-contract.md)：内容寻址与秒传、预签名直传、`binding_role`、读取可见性口径。
+- [API 行为参考](reference-api-behavior.md)：统一 `/api` 前缀、八类实体边界、翻译形状、写入校验与端点差异。
+- [API 错误码与修复动作](reference-api-errors.md)：常见拒绝码的含义与改法（证据 / 字段 / 词表 / 结构归属 / 关系 / 并发 / 权限）。
+- [接口归属与写入范围](reference-endpoint-scope.md)：哪些前缀属于编目、哪些不属于，以及"实体是否存在/可见"该问谁。
+- [文件上传与绑定](reference-file-upload.md)：内容寻址与秒传、预签名直传、`binding_role`、读取可见性口径。
 - [编目 SOP](reference-sop-workflows.md)：从考据到写后核对的操作顺序。
 - [质量检查清单](reference-qa-checklist.md)：题名、层级、关系、封面和审计检查。
 - [API 载荷模板](reference-api-templates.md)：统一实体入口的字段与兼容路径的使用边界。
-- [LRM 架构参考](reference-lrm-architecture.md)：跨媒介层级和表达复用原则。
+- [实体与层级数据模型](reference-data-model.md)：跨媒介层级和表达复用原则。

@@ -1,22 +1,29 @@
-# MetaFusion Skills — 编目标准技能集
+# MetaFusion Skills — 给 Agent 的站点数据操作指南
 
-本仓库收录 MetaFusion 项目的 **AI Agent 编目标准技能（Agent Skills）**，已从 [MetaFusion 主仓库](https://github.com/MoeclubM/MetaFusion) 的 `.cursor/skills/` 迁移独立托管，供各类支持 Skills 规范的 Agent（Cursor / ZCode / Claude 等）复用。
+本仓库收录 **AI Agent 浏览与修改 MetaFusion 站点数据的技能**：怎么查、怎么写、写完怎么核验，
+以及写库被拒时怎么改，供支持 Skills 规范的 Agent（Cursor / ZCode / Claude Code 等）复用。
+
+**这里不是开发文档**：代码结构、数据库结构、部署与切流、各服务实现细节都不在本仓库——
+它们属于主仓库 [MetaFusion](https://github.com/MoeclubM/MetaFusion) 的 `AGENTS.md` 与 `docs/`。
+面向外部开发者的 REST API 文档、面向用户与社区的项目介绍在 [metafusion-docs](https://github.com/MoeclubM/metafusion-docs)。
 
 ## 技能清单
 
 | 技能 | 路径 | 说明 |
 |---|---|---|
-| **metafusion-curator** | [`skills/metafusion-curator/`](skills/metafusion-curator/SKILL.md) | MetaFusion 权威编目与元数据审查规范：覆盖纯题名、LRM 层级、同作品载体边界、关系审查、封面、i18n、证据与写后核验，并附子系统边界、存储契约与当前实现契约参考。 |
+| **metafusion-curator** | [`skills/metafusion-curator/`](skills/metafusion-curator/SKILL.md) | 站点数据的读写与审查总则：查重、层级归属、关系审查、封面、多语言、证据与写后核验；附 API 行为、错误码、接口归属、文件上传与数据模型参考。 |
 | **lrm-catalog-standards** | [`skills/lrm-catalog-standards/`](skills/lrm-catalog-standards/SKILL.md) | MetaFusion LRM 编目与发行版命名规范：按当前 Agent / Collection / Work / ContentUnit / Expression / Release / Medium / Track 边界处理跨媒介实体与发行版命名。 |
 
-两个技能互为补充：`metafusion-curator` 是全站编目审查总则，`lrm-catalog-standards` 是与之同步互补的发行版命名细分规范。两者都引用 `reference-runtime-contract.md`，遇到目标实例差异时以实例 OpenAPI、已执行迁移和响应为准。
+两个技能互为补充：`metafusion-curator` 是数据操作与审查总则，`lrm-catalog-standards` 是发行版命名与内容复用的细分规范。
+两者都引用 `reference-api-behavior.md`；与实例响应不一致时以实例为准。
 
 ## 契约基线
 
 - 统一入口是 `/api`，**没有 `/api/v1`、`/api/v2` 版本前缀**；实体写入统一走 `POST|PUT /api/catalog/entities`，关系走 `/api/catalog/relations`。
 - 固定实体骨架为八类：`agent` / `collection` / `work` / `content_unit` / `expression` / `release` / `medium` / `track`。
-- 子系统的路由归属与数据所有权见 [子系统边界](skills/metafusion-curator/reference-service-boundaries.md)（来源为主仓库 `docs/architecture/service-split-migration.md`）。
-- 存储服务的文件契约见 [存储契约要点](skills/metafusion-curator/reference-storage-contract.md)。
+- 哪些前缀属于编目、哪些不属于：见 [接口归属与写入范围](skills/metafusion-curator/reference-endpoint-scope.md)。
+- 文件怎么传、怎么挂到实体上：见 [文件上传与绑定](skills/metafusion-curator/reference-file-upload.md)。
+- 写库被拒怎么办：见 [API 错误码与修复动作](skills/metafusion-curator/reference-api-errors.md)。
 
 ## 安装方式
 
@@ -33,4 +40,5 @@ cp -r metafusion-skills/skills/lrm-catalog-standards  <your-repo>/.cursor/skills
 
 ## 许可与来源
 
-技能初始内容迁移自 MetaFusion 主仓库 `.cursor/skills/`；当前文档按主仓库运行时契约与各子系统服务实现持续校准，具体实例以其 OpenAPI、已执行迁移和响应为准。
+技能内容以**目标实例的实际响应**为准校准：接口行为、枚举与字段码都会随实例配置演进，
+动手前先读 `GET /api/openapi.json` 与 `GET /api/catalog/definitions`。
