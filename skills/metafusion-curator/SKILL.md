@@ -10,9 +10,8 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
 
 ## 先确认运行时口径
 
-1. 目标实例的统一入口是 `/api`。本项目**没有 `/api/v1`、`/api/v2` 版本前缀**；
-   历史文档与第三方适配器里的 `/api/v1/catalog/works`、`/api/v2/catalog/entities` 一类路径**不存在**，
-   版本不明时不要尝试写入。
+1. 目标实例的统一入口是 `/api`，全站只有这一套前缀；
+   `/api/v1/catalog/works`、`/api/v2/catalog/entities` 这类带版本号的路径调不通，版本不明时不要尝试写入。
 2. 读取 [API 行为参考](reference-api-behavior.md) 与 [API 错误码与修复动作](reference-api-errors.md)，
    再核对目标实例的 `GET /api/openapi.json`、`GET /api/catalog/definitions` 和当前用户角色。
    示例里的字段名与枚举不能代替运行时验证；写库被拒时先查错误码表再改载荷。
@@ -24,8 +23,14 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
 
 - **账号 auth**（`/api/setup`、`/api/auth/*`、`/api/admin/users*`、`/api/oauth/*`、`/api/oidc/jwks`）：
   登录、会话、令牌与账号管理。业务权限（谁能编辑哪个实体）仍由目录判断。
-- **互动 community**（`/api/community/*`、`/api/favorites/*`、`/api/records/*`、`/api/users/{id}/favorites`）：
-  论坛、条目短评、收藏与互动记录。它们**不是**元数据事实，不要通过目录接口写入，也不要为它们建实体。
+  注意 `/api/admin/*` **不是整段归账号**：`/api/admin/catalog-definitions`、`/api/admin/shelves`、
+  `/api/admin/external-databases` 由目录服务提供（定义、货架、外部库管理）。
+- **互动 community**（`/api/community/*`、`/api/users/{id}/favorites`；`/api/favorites/*`、`/api/records/*`
+  在当前部署返回 404）：论坛、条目短评、收藏与互动记录。它们**不是**元数据事实，
+  不要通过目录接口写入，也不要为它们建实体。
+- **目录的其它只读入口**：`GET /api/exchange/entities/{id}`（导出快照）、
+  `POST /api/exchange/proposals`（外部提案，落 `pending_review`，不直接写实体）、
+  `GET /api/catalog/me/home-preferences`。它们不改变"编目写入只走目录"这条边界。
 - **存储 storage**（`/api/storage/*`）：物理文件、sha256、直传、绑定与下载。
 - **网关 gateway**：按前缀分流，前端调用点不因服务切换而改变。
 
@@ -41,6 +46,8 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
   制作委员会、Bangumi、TMDB 等。
 - 使用搜索和实体详情按原题名、原文题名、别名、条码、品番和外部 ID 查重
   （`GET /api/catalog/entities?q=…`）。
+- 查重维度必须包含 **kind + 题名 + `types` + 父级作用域**：同名、同 kind 但类型码不同的实体是两回事
+  （电影《君の名は。》与它的 OST 专辑就同名同 kind）。只按题名复用，会把篇目、表达和合集挂到错的母体上。
 - 命中同一创作母体时复用 Work；缺少的是版本、容器、篇目或翻译就补相应层级。
   只有证据显示为不同创作实体时才新建 Work。
 - 记录每个结论对应的来源。来源 URL 可访问只是最低条件，不能代替对内容的核对。
@@ -64,6 +71,10 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
 `track` 必须有 `medium_id`。`content_unit` 的 `parent_id` 只能指向同一 Work 的目录项，
 `medium` / `track` 的 `parent_id` 只能指向同一 Release / Medium；`expression` **没有 `parent_id`**。
 **`release` 没有 `work_id`**：被其载体实际收录表达的 Work 全部经 `subjects` 声明。
+
+**每个实体都要声明 `types`**：`attributes` 的可写字段 = 该实体 `types` 的字段并集，未声明类型时
+`attributes` 只能为空，写任何键都是 `unknown_field`；类型码的 `kinds` 不含本 kind 则 `invalid_type`。
+类型码清单、逐 kind 可写字段与结构化字段形状见 [类型码、字段白名单与结构化字段](reference-types-and-fields.md)。
 
 ### 3. 清洗题名与分离规格
 
@@ -93,15 +104,26 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 - 写入前验证当前用户确有目标 API 的权限；读操作和审查不需要把结果写回系统。
 - 创建用 `POST /api/catalog/entities`（`expected_version` 为 0、`entity.id` 留空），
   更新用 `PUT /api/catalog/entities/{id}`。**PUT 是整实体替换**：先 GET 完整实体，只改需要改的字段，
-  其余字段原样带回。发布、退回、合并、停用走 `POST /api/catalog/entities/{id}/lifecycle`（管理员）。
+  其余字段原样带回。
+- **发布靠 PUT 写 `status: "published"`**（要求至少一条翻译，否则 `translation_required`）。
+  `POST /api/catalog/entities/{id}/lifecycle`（管理员）**只做合并与停用**，body 是
+  `{target_id?, expected_version, edit_note, sources}`：`target_id` 留空即停用、有值即合并
+  （目标须同 kind、同归属且已发布，否则 `invalid_merge_target`），**没有 `action` 字段**——
+  带 `{"action":"publish"}` 会 `400 invalid_payload`。
+- **当前没有"退回"通道**：`published → draft` 被 `use_lifecycle_endpoint` 拒绝，lifecycle 也没有降级动作。
+  发布前必须确认内容已定稿；已经发布又想改状态的情况只能按实现缺口上报。
 - 每次编目变更都准备具体的 `edit_note` 和至少一个 `sources` 项
   （`kind` 为 `url` / `publication` / `self`，`citation` 必填，带 `url` 时必须是合法 HTTP(S)）。
   **服务端强制校验**：实体与关系写入缺证据一律返回 `evidence_required`，没有例外可赌。
-  旧版的 `source_urls` 字符串数组不存在。
-- 创建实体与创建关系支持 `Idempotency-Key` 头（24 小时）；更新与删除靠 `expected_version`，
+  证据字段只认 `sources` 对象数组（`source_urls` 字符串数组会被严格解析拒收）。
+- 创建实体与创建关系支持 `Idempotency-Key` 头。幂等键 = 路由 + 用户 + 键值，**不做载荷哈希**：
+  同键第二次调用被当成重放，直接返回**首条**结果（即使换了载荷也一样）。所以键必须唯一标识"这一次创建"
+  （含两端、父级作用域、版次等区分维度），重试要复用同一载荷。更新与删除靠 `expected_version`，
   409 `version_conflict` 时回读再重放。
 - 关系写入只使用 `GET /api/catalog/definitions` 中 `enabled` 的关系码与允许的两端 kind / 业务类型，
   经由 `POST /api/catalog/relations`、`PUT` / `DELETE /api/catalog/relations/{id}`。
+  **删除关系必须在 body 里带 `expected_version`**，与 `edit_note` / `sources` 同体，否则 409 / 400。
+  关系码的方向、属性字段与端点限制见 [关系码、方向与属性](reference-relations.md)；
   不要把来源名称直接写成 agent ID，也不要为同一个角色拆出重复实体。
 
 ### 6. 写后验证
@@ -128,9 +150,13 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 ## 多语言与封面约束
 
 - 所有实体的 `translations` 都是**对象**：`{"zh-CN":{"title","summary","aliases"}}`。
-  不存在"Work/Artist 用数组、Release/Medium/Track 用对象"的分裂，不要跨层复制旧形状。
+  跨层复制旧的数组形状会被拒收：全站只认这一种对象形状。
 - 关系类型、角色、载体格式、包装和标签的显示名来自 `GET /api/catalog/definitions` 与其词表，
   前端不新增硬编码术语。
+- 定义、货架、外部库的 `names` 必须**四语齐备**（`zh-CN`、`zh-TW`、`en-US`，加 `ja` 或 `ja-JP`），
+  否则 `four_locale_names_required`；它与实体的 `translations` 是两套形状。
+- `attributes.tags` **只有 10 个 work 类型有**：release / medium / track / content_unit / expression /
+  collection / agent 写 tags 一律 `unknown_field`，版本与包装信息请用各自字段承载。
 - 封面走 `pictures: [{url, caption:{locale:说明}, source:{kind,citation,url?}}]`；
   `url` 必须是绝对 HTTP(S) 地址。不要在实体顶层写 `cover_aspect` / `cover_image_url`——它们不在写入 DTO 里，
   严格解析会直接 400。画幅比例若实例定义声明了对应字段，放在 `attributes` 下。
@@ -150,4 +176,7 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 - [编目 SOP](reference-sop-workflows.md)：从考据到写后核对的操作顺序。
 - [质量检查清单](reference-qa-checklist.md)：题名、层级、关系、封面和审计检查。
 - [API 载荷模板](reference-api-templates.md)：统一实体入口的字段与兼容路径的使用边界。
-- [实体与层级数据模型](reference-data-model.md)：跨媒介层级和表达复用原则。
+- [类型码、字段白名单与结构化字段](reference-types-and-fields.md)：`types` 如何决定可写属性、逐 kind 字段表、词表全量、locator/attachments/infobox 的形状。
+- [关系码、方向与属性](reference-relations.md)：29 条关系码的方向与端点、关系属性 9 字段、多边与成环口径。
+- [实体与层级数据模型](reference-data-model.md)：跨媒介层级和表达复用原则、常见建模范式。
+- [模型缺口与上报路径](reference-model-gaps.md)：表达不了的事实清单、扩展 definitions 的正规通道。

@@ -19,12 +19,12 @@
 - ContentUnit / Expression：官方章节、分集或曲目目录，或可核验的母版信息；
 - 关系：双方实体的官方关系说明或可信数据库。
 
-按原题名、原文题名、别名、条码、品番和外部 ID 查询（`GET /api/catalog/entities?q=…`）。
+按 kind + 原题名、原文题名、别名，再带 **`types` + 父级作用域**核对（`GET /api/catalog/entities?q=…`）：同名同 kind 但类型码不同的实体是两回事（如电影本体与其 OST 专辑），只按题名复用会把篇目/表达挂到错的母体。
 已有 Work 只补缺失层级；同名但不同创作母体需要证据支持后才分开。
 
 ## 第三步：先建模再写载荷
 
-把输入拆成 Work、ContentUnit、Expression、Release、Medium、Track：
+把输入拆成 Work、ContentUnit、Expression、Release、Medium、Track，并为每个实体选好 `types`（`attributes` 的可写字段 = `types` 的字段并集；不声明类型就只能写空 `attributes`，见 [类型码、字段白名单与结构化字段](reference-types-and-fields.md)；`agent` 则保持 `attributes` 为空）：
 
 1. **Work** 只放纯题名、原始语言、基础简介、标签与创作主体（署名走关系）。
 2. **ContentUnit** 只放同一 Work 的表达/分集/章节**目录**；有来源才创建，不从卷数推造章节。
@@ -40,7 +40,7 @@
 
 - 清除 Work 题名中的季数、盘号、卷号、规格、画质、音质、包装和字幕组信息；只有确实是独立创作实体时才保留。
 - 所有实体统一使用 `translations` **对象**（`{"zh-CN":{"title","summary","aliases"}}`），
-  不存在"某些 kind 用数组"的分支；每个 locale 都要是合法语言标签。
+  全站只认这一种对象形状；每个 locale 都要是合法语言标签。
 - 封面走 `pictures`，`url` 必须是绝对 HTTP(S) 地址（相对路径会被判 `invalid_picture`），
   `source` 同样要满足证据规则。画幅比例若实例定义声明了字段码，放在 `attributes` 下；
   不要提交顶层 `cover_aspect`。
@@ -52,14 +52,16 @@
 | --- | --- |
 | 创建实体（任意 kind） | `POST /api/catalog/entities` |
 | 更新实体 | `PUT /api/catalog/entities/{id}`（整实体替换，先 GET 再改） |
-| 发布 / 退回 / 合并 / 停用 | `POST /api/catalog/entities/{id}/lifecycle`（管理员） |
+| 发布 | `PUT /api/catalog/entities/{id}` 写 `status: "published"`（需至少一条翻译；普通 PUT 提交 `deleted`/`merged` 或把已发布条目降级会 `400 use_lifecycle_endpoint`） |
+| 退回 | **当前没有可用通道**（`published → draft` 一律被拒，lifecycle 也没有降级动作）；发布前确认定稿，按实现缺口上报 |
+| 合并 / 停用 | `POST /api/catalog/entities/{id}/lifecycle`（管理员，权限 `catalog.lifecycle.manage`），body 是 `{target_id?, expected_version, edit_note, sources}`：`target_id` 留空即停用、有值即合并，**没有 `action` 字段**（带 `{"action":"publish"}` 会 `400 invalid_payload`） |
 | 新建关系 | `POST /api/catalog/relations` |
-| 更新 / 删除关系 | `PUT` / `DELETE /api/catalog/relations/{id}` |
+| 更新 / 删除关系 | `PUT` / `DELETE /api/catalog/relations/{id}`（删除必须在 body 里带 `expected_version`，与 `edit_note`/`sources` 同体；版本号从 `entities/{id}/relations` 的返回项里取） |
 
 每次提交都准备具体 `edit_note` 与至少一个 `sources` 项（`kind` 为 `url` / `publication` / `self`）。
-**证据由服务端强制**：实体与关系写入都会返回 `evidence_required`，不存在"某些端点不校验"的例外。
+**证据由服务端强制**：实体、关系、lifecycle 三条路径缺证据一律返回 `evidence_required`。
 创建实体与创建关系可以带 `Idempotency-Key` 头（24 小时）；更新与删除靠 `expected_version`，不要靠重试。
-旧契约里的 `POST /catalog/submit` 与 `PUT /catalog/entity-relations` 都**不存在**。
+综合导入走 `POST /api/importer/preview` 与 `POST /api/importer/import`；关系逐条走关系端点（见上表）。
 
 ## 第六步：按依赖顺序提交
 
@@ -70,9 +72,12 @@
 
 ## 第七步：写后验证与报告
 
-重新读取实体、`relations`、`occurrences`、`revisions`，必要时用 `/api/catalog/compare?ids=…` 对比发行。
+重新读取实体、`relations`、`occurrences`、`revisions`，必要时用 `/api/catalog/compare?ids=…`（只接受 2–6 个发行）对比发行。
 检查归属与父子边界、`position`、`subjects` 覆盖、`contents` 的 expression 引用、
-翻译回退、`pictures` 与修订记录。关系审查还要检查自环、两端 kind 是否被允许、反向重复与层级边长路径；
+翻译回退、`pictures` 与修订记录（`revisions` 只有写后 `snapshot`，**没有 before/after**：拿快照与当前实体比对）。
+关系审查还要检查自环、两端 kind 是否被允许、成环（只在同一关系码边集内检测）和层级边长路径；
+**反向边不自动判重**（当前定义全非 symmetric，需要双向语义就建两条，不要把「没见到拒绝」当判重）；
+同类多边靠 `attributes` 区分（不同 `credit_role` / `character` / `language`），只改 `position` 会撞唯一索引。
 服务端响应成功不等于所有图路径都已经证明无环，请把结论限定在已复核的局部。
 
 报告使用四种结果：**通过、需补证据、需修正、实现缺口**。每项写明实体、字段、证据、影响和下一步。

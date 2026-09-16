@@ -41,6 +41,10 @@
 - `release.subjects` 声明该发行实际收录表达的**全部** Work，`role` 用 `release_role`
   （`primary` / `compilation` / `supplement`）。任一收录表达的 Work 未在 `subjects` 里声明，
   保存会被拒绝（`undeclared_release_subject`）。
+  `subjects` 本身**不是必填字段**：服务端允许零 `subjects`（甚至零 `medium`）的发行入库，
+  但那样的发行表达不了收录事实，自检会记 P1，别把"服务端没拦"当成建模完成。
+- **每个实体都要声明 `types`**：`attributes` 的可写字段 = 该实体 `types` 的字段并集；不声明类型就只能写空
+  `attributes`（否则 `unknown_field`）。类型码与逐 kind 字段表见 [类型码、字段白名单与结构化字段](reference-types-and-fields.md)。
 - 所属域不可变：普通 PUT 不能改 `kind` / `work_id` / `release_id` / `medium_id`；换归属等于重建实体。
 
 ## 表达复用的边界
@@ -70,6 +74,12 @@
 
 ### 音乐专辑
 
+> **标准范式（OST、迷你专辑、单曲同理）**：专辑 = 一个 `work`（`types: ["album"]`）；曲目 = 其下的
+> `content_unit`（`entry_role: "main"`，`number`/`position` 用官方曲序）；录音 = `expression`（`content_unit_id`
+> 指向对应曲目）；实体盘 = `release` + `medium` + `track`，由 `track.contents` 收录曲目的 `expression`。
+> 电影《君の名は。》与它的 OST 专辑同名、同 kind（都是 `work`），**靠 `types` 与收录关系区分**——
+> 这正是查重必须带 `types` 的原因。
+
 1. 歌曲创作母体是 Work；具体录音/母带是 Expression（不同编曲版本是不同 Expression，或经 `alternate_take_of` 关联）。
 2. 每张实体或数字专辑是独立 Release，盘片是 Medium，曲目位置是 Track。
 3. 同一录音在该 Work 的多个 Release 中出现时复用同一 Expression；版本差异写在 Release / Medium / Track。
@@ -87,7 +97,8 @@
 
 - `content_unit` / `expression` 的 `work_id` 一致，`medium` / `track` 的 `release_id` / `medium_id` 正确；
 - `parent_id` 没有自环、跨容器或闭环，且 `expression` 上没有误填 `parent_id`；
-- 同一 Medium 或 Track 的 `position` 没有冲突；
+- 同一 `track.contents` 数组内的 `position` 不重复（`duplicate_position` 只管这一层）；
+  同一 Medium 下兄弟 Track 的 `position` 服务端**不拦**（实测重复也能建），靠自检与约定约束；
 - 每个发行的 `subjects` 覆盖了它实际收录表达的全部 Work（否则会出现 `undeclared_release_subject`）；
 - 多作品盒装没有被错误地挂到单一作品，也没有伪造 `work_id`；
 - 封面与文件资产没有被当成创作内容，哈希/对象键/下载地址没有写进题名或动态字段。

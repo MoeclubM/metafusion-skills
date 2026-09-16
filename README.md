@@ -11,7 +11,7 @@
 
 | 技能 | 路径 | 说明 |
 |---|---|---|
-| **metafusion-curator** | [`skills/metafusion-curator/`](skills/metafusion-curator/SKILL.md) | 站点数据的读写与审查总则：查重、层级归属、关系审查、封面、多语言、证据与写后核验；附 API 行为、错误码、接口归属、文件上传与数据模型参考。 |
+| **metafusion-curator** | [`skills/metafusion-curator/`](skills/metafusion-curator/SKILL.md) | 站点数据的读写与审查总则：查重（含 `types`）、层级归属、关系审查、封面、多语言、证据与写后核验；附 API 行为、错误码、接口归属、文件上传、数据模型、类型码与字段白名单（`reference-types-and-fields.md`）、关系码全表（`reference-relations.md`）、模型缺口清单（`reference-model-gaps.md`）参考。 |
 | **lrm-catalog-standards** | [`skills/lrm-catalog-standards/`](skills/lrm-catalog-standards/SKILL.md) | MetaFusion LRM 编目与发行版命名规范：按当前 Agent / Collection / Work / ContentUnit / Expression / Release / Medium / Track 边界处理跨媒介实体与发行版命名。 |
 
 两个技能互为补充：`metafusion-curator` 是数据操作与审查总则，`lrm-catalog-standards` 是发行版命名与内容复用的细分规范。
@@ -20,7 +20,8 @@
 ## 契约基线
 
 - 统一入口是 `/api`，**没有 `/api/v1`、`/api/v2` 版本前缀**；实体写入统一走 `POST|PUT /api/catalog/entities`，关系走 `/api/catalog/relations`。
-- 固定实体骨架为八类：`agent` / `collection` / `work` / `content_unit` / `expression` / `release` / `medium` / `track`。
+- 固定实体骨架为八类：`agent` / `collection` / `work` / `content_unit` / `expression` / `release` / `medium` / `track`；`attributes` 的可写字段 = 实体 `types` 的字段并集，不声明类型就只能写空 `attributes`。
+- 发布是 PUT 写 `status: "published"`；lifecycle 只做合并与停用（body 无 `action`），**退回当前没有通道**；关系码共 29 条，方向与属性以 `reference-relations.md` 为准。
 - 哪些前缀属于编目、哪些不属于：见 [接口归属与写入范围](skills/metafusion-curator/reference-endpoint-scope.md)。
 - 文件怎么传、怎么挂到实体上：见 [文件上传与绑定](skills/metafusion-curator/reference-file-upload.md)。
 - 写库被拒怎么办：见 [API 错误码与修复动作](skills/metafusion-curator/reference-api-errors.md)。

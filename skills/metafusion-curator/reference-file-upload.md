@@ -60,11 +60,12 @@
 - "实体可见"由目录服务判定（`GET /api/catalog/entities/{id}`），存储不缓存结论；
   调用者令牌原样转发，所以草稿/待审条目的可见性仍按请求者身份计算。
 
-## 迁移状态（动手前必须确认）
+## 迁移状态（已切流，直接按 `/api/storage/*` 调用）
 
-- `/api/storage/*` 的实现在 metafusion-storage，网关的 `/api/storage/` 已指向该服务；
-  主仓库的 `/api/archive/*`、`/api/playback/*`、`/api/media/*` 仍是当前线上入口，将在 P4 切流后退役下线。
-- 因此**先确认目标实例实际提供哪一组前缀**：能调通 `/api/storage/*` 就按本文件；
-  只看到 `/api/archive|playback|media` 时，不要把本文件的路径当成已存在的能力，按实例响应为准并在报告中说明差异。
+- **已切流**：`/api/storage/*` 的实现在 metafusion-storage，网关的 `/api/storage/` 已指向该服务，**线上已生效**，直接按本文件的路径调用。
+- 调用只走 `/api/storage/*`：`/api/archive/*`、`/api/playback/*`、`/api/media/*` 这些前缀实测返回 404，
+  拿到 404 说明调错了前缀，换回本文件的 `/api/storage/*` 路径重试。
+- 个别 `/api/storage/*` 端点若在某实例返回 404，说明该实例还没部署到该端点：记差异、停掉依赖它的写入，
+  等实例侧补齐后再继续。
 - `GET /api/storage/entities/{id}/files` 的 `id` 是**目录实体 ID**（介质/轨道/表达等），不是存储自造的 ID；
   存储不保存目录结构。
