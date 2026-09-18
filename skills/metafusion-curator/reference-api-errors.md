@@ -80,8 +80,8 @@ A→B 与 B→A 同类型的两条边都合法——需要双向语义就建两�
 | 错误码 | 含义 | 修复动作 |
 | --- | --- | --- |
 | `version_conflict`（409） | `expected_version` 与库里不一致 | 回读实体取最新 `version` 再重放；不要盲重试。`DELETE /api/catalog/relations/{id}` 不带版本也走这里 |
-| `use_lifecycle_endpoint` | 用 PUT 提交 `deleted`/`merged`，或把已发布条目降级（`published → draft`） | 停用/合并走 `POST /api/catalog/entities/{id}/lifecycle`（body `{target_id?, expected_version, edit_note, sources}`，**没有 `action`**）。**降级没有通道**：这正是"退回"能力的空缺，按实现缺口上报 |
-| `invalid_status` | lifecycle 作用在 `deleted`/`merged` 条目上，或状态值非法 | 确认实体当前状态；终止态不可再走 lifecycle |
+| `use_lifecycle_endpoint` | 用 PUT 提交 `deleted`/`merged`，或把已发布条目降级（`published → draft`） | 状态变更不走 PUT：停用/合并走 `POST /api/catalog/entities/{id}/lifecycle`（body `{target_id?, expected_version, edit_note, sources}`，**没有 `action`**），**退回走 `POST /api/catalog/entities/{id}/unpublish`**（权限 `catalog.lifecycle.manage`，body `{expected_version, edit_note, sources}`，不能带 `target_id`）。旧版技能写的"降级没有通道"已作废 |
+| `invalid_status` | lifecycle 作用在 `deleted`/`merged` 条目上，或状态值非法；下架端点收到的实体不是 `published`（`draft`/`pending_review` 没有可下架的内容，`deleted`/`merged` 是终态） | 先 `GET` 读回 `status`：已是 `draft` 就不必下架；终止态不可再走 lifecycle，要恢复只能新建 |
 | `invalid_merge_target` | 合并目标与源不同 kind／不同归属／不同父级，或目标未发布 | 只合并同一层级、同一容器里的重复建档，目标必须 `published` |
 | `forbidden`（403） | 角色不足：普通角色碰已发布条目、非管理员走 lifecycle、member 建关系或调 importer；**停用（`deleted`/`merged`）实体上的关联边删不掉也走这里** | 用 `catalog.entity.edit` 维护已发布条目；发布/合并/停用归 `catalog.lifecycle.manage`；悬空边清理属实例侧缺口，上报而不是反复重试 |
 | `authentication_required`（401） | **写端点**没有有效令牌 | 重新登录或换令牌。注意读端点匿名/坏令牌仍返回 200，所以"读得通"证明不了令牌有效 |

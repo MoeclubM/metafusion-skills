@@ -21,7 +21,7 @@
 
 - 统一入口是 `/api`，**没有 `/api/v1`、`/api/v2` 版本前缀**；实体写入统一走 `POST|PUT /api/catalog/entities`，关系走 `/api/catalog/relations`。
 - 固定实体骨架为八类：`agent` / `collection` / `work` / `content_unit` / `expression` / `release` / `medium` / `track`；`attributes` 的可写字段 = 实体 `types` 的字段并集，不声明类型就只能写空 `attributes`。
-- 发布是 PUT 写 `status: "published"`；lifecycle 只做合并与停用（body 无 `action`），**退回当前没有通道**；关系码共 29 条，方向与属性以 `reference-relations.md` 为准。
+- 发布是 PUT 写 `status: "published"`；lifecycle 只做合并与停用（body 无 `action`），**退回走专属下架端点** `POST /api/catalog/entities/{id}/unpublish`（权限 `catalog.lifecycle.manage`，`published → draft`，体 `{expected_version, edit_note, sources}`）；关系码共 29 条，方向与属性以 `reference-relations.md` 为准。
 - 哪些前缀属于编目、哪些不属于：见 [接口归属与写入范围](skills/metafusion-curator/reference-endpoint-scope.md)。
 - 文件怎么传、怎么挂到实体上：见 [文件上传与绑定](skills/metafusion-curator/reference-file-upload.md)。
 - 写库被拒怎么办：见 [API 错误码与修复动作](skills/metafusion-curator/reference-api-errors.md)。

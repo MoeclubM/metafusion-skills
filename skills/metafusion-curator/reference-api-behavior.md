@@ -148,8 +148,14 @@
   否则 `invalid_merge_target`）。带 `{"action":"publish"}` 会 `400 invalid_payload`。
 - **发布是 PUT 写 `status: "published"`**（要求至少一条翻译，否则 `translation_required`）。
   `deleted` / `merged` 只能经 lifecycle 端点，普通 PUT 提交这些状态返回 `use_lifecycle_endpoint`。
-- **降级 / 退回当前没有通道**：`published` 条目 PUT 回 `draft` 同样被 `use_lifecycle_endpoint` 拒绝，
-  而 lifecycle 没有降级动作。发布前必须确认定稿；这个空缺按实现缺口上报，不要用"停用 + 重建"绕过。
+- **退回走下架端点**：`POST /api/catalog/entities/{id}/unpublish`（管理员，权限 `catalog.lifecycle.manage`），
+  body 是 `{expected_version, edit_note, sources}`——**没有 `target_id`**（带上 → `400 invalid_payload`）。
+  它是状态机里**唯一**的降级通道，只接受 `published → draft`：下架后回到草稿可继续编辑，修订历史留痕，
+  同事务写一条 `entity.unpublished` 事件（不计入贡献统计的 `audit_actions`，那里只数删除与合并）。
+  `draft` / `pending_review` 没有可下架的内容、`deleted` / `merged` 是终态，四种情况都 `400 invalid_status`；
+  版本不符 `409 version_conflict`，缺证据 `evidence_required`。
+  `published` 条目 PUT 回 `draft` 仍被 `use_lifecycle_endpoint` 拒绝——那只是"状态变更不走 PUT"，
+  **不是没有退回通道**：旧版技能写的"降级/退回当前没有通道"已作废，不要再按实现缺口上报，也不要用"停用 + 重建"绕过。
 - **关系**：`POST /api/catalog/relations`、`PUT /api/catalog/relations/{id}`、`DELETE /api/catalog/relations/{id}`。
   载荷是 `{relation:{type,source_id,target_id,position,attributes}, expected_version, edit_note, sources}`。
   **DELETE 也必须带 body**（`expected_version` + `edit_note` + `sources`）：不带版本 → `409 version_conflict`，
@@ -163,9 +169,10 @@
   **键里不含载荷**：幂等缓存键 = 路由 + 用户 + 键值，**不做载荷哈希**——同键换了载荷也一样返回首条结果
   （实测：同键不同载荷 → 200 返回第一个实体）。所以键必须唯一标识"这一次创建"（含两端、父级作用域、版次等
   区分维度），重试必须复用同一载荷，否则会静默丢边或把两个版次并成一个。更新与删除靠 `expected_version`。
-- **状态与权限**：状态为 `draft` / `pending_review` / `published`（`deleted` / `merged` 只能经 lifecycle 端点）。
+- **状态与权限**：状态为 `draft` / `pending_review` / `published`（`deleted` / `merged` 只能经 lifecycle 端点，
+  `published → draft` 只能经 unpublish 端点）。
   普通角色只能写 `draft` / `pending_review` 且不可触碰已发布条目；`editor` 可维护已发布条目；
-  发布、合并、停用归管理员。发布态要求至少一条翻译，否则 `translation_required`。
+  发布、合并、停用与下架归管理员（`catalog.lifecycle.manage`）。发布态要求至少一条翻译，否则 `translation_required`。
 - **请求体是严格解析的**：未知字段直接 `400 invalid_payload`，上限 2 MiB。只提交当前 DTO 的字段：写发行版名用
   `title`（`edition_name` 会被拒），时长字段码是 `duration`，单内容引用走 `contents`，封面走 `pictures`；
   `track` 不带 `work_id`，kind 只用八类现行值（`artist` / `franchise` 会判 `invalid_entity`）。

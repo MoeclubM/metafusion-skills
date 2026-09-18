@@ -8,7 +8,7 @@
 确认 API 基址、认证状态、用户 locale。读取 `GET /api/openapi.json`、
 `GET /api/catalog/definitions`（类型、字段、词表、关系、模板、场景）与目标实体详情。
 优先使用服务器返回的代码与名称，不在脚本里复制一套静态词表。
-确认用户角色：普通角色只能写 `draft` / `pending_review`，`editor` 可维护已发布条目，发布与合并归管理员。
+确认用户角色：普通角色只能写 `draft` / `pending_review`，`editor` 可维护已发布条目，发布、合并、停用与下架归管理员（`catalog.lifecycle.manage`）。
 
 ## 第二步：来源与查重
 
@@ -53,7 +53,7 @@
 | 创建实体（任意 kind） | `POST /api/catalog/entities` |
 | 更新实体 | `PUT /api/catalog/entities/{id}`（整实体替换，先 GET 再改） |
 | 发布 | `PUT /api/catalog/entities/{id}` 写 `status: "published"`（需至少一条翻译；普通 PUT 提交 `deleted`/`merged` 或把已发布条目降级会 `400 use_lifecycle_endpoint`） |
-| 退回 | **当前没有可用通道**（`published → draft` 一律被拒，lifecycle 也没有降级动作）；发布前确认定稿，按实现缺口上报 |
+| 退回（`published → draft`） | `POST /api/catalog/entities/{id}/unpublish`（管理员，权限 `catalog.lifecycle.manage`），body 是 `{expected_version, edit_note, sources}`，**不能带 `target_id`**（带上 `400 invalid_payload`）。下架后回到草稿可继续编辑；只接受已发布条目（其余状态 `400 invalid_status`），版本不符 `409 version_conflict`；旧版技能写的"当前没有可用通道"已作废 |
 | 合并 / 停用 | `POST /api/catalog/entities/{id}/lifecycle`（管理员，权限 `catalog.lifecycle.manage`），body 是 `{target_id?, expected_version, edit_note, sources}`：`target_id` 留空即停用、有值即合并，**没有 `action` 字段**（带 `{"action":"publish"}` 会 `400 invalid_payload`） |
 | 新建关系 | `POST /api/catalog/relations` |
 | 更新 / 删除关系 | `PUT` / `DELETE /api/catalog/relations/{id}`（删除必须在 body 里带 `expected_version`，与 `edit_note`/`sources` 同体；版本号从 `entities/{id}/relations` 的返回项里取） |

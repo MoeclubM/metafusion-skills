@@ -110,8 +110,13 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
   `{target_id?, expected_version, edit_note, sources}`：`target_id` 留空即停用、有值即合并
   （目标须同 kind、同归属且已发布，否则 `invalid_merge_target`），**没有 `action` 字段**——
   带 `{"action":"publish"}` 会 `400 invalid_payload`。
-- **当前没有"退回"通道**：`published → draft` 被 `use_lifecycle_endpoint` 拒绝，lifecycle 也没有降级动作。
-  发布前必须确认内容已定稿；已经发布又想改状态的情况只能按实现缺口上报。
+- **退回走下架端点**：`POST /api/catalog/entities/{id}/unpublish`（权限 `catalog.lifecycle.manage`，与合并/停用同一档），
+  body 是 `{expected_version, edit_note, sources}`——**没有 `target_id`**（带上会 `400 invalid_payload`）。
+  它是状态机里**唯一**的降级通道，只接受 `published`：已发布条目退回 `draft`（回到草稿可继续编辑，修订历史留痕，
+  同事务写一条 `entity.unpublished` 事件）；`draft` / `pending_review` 没有可下架的内容，`deleted` / `merged` 是终态，
+  四种状态一律 `400 invalid_status`。版本不符 `409 version_conflict`，缺证据 `evidence_required`。
+  注意区分两件事：普通 PUT 提交降级仍返回 `use_lifecycle_endpoint`（这是"别用 PUT 改状态"），
+  **不等于没有通道**——旧版技能写的"当前没有退回通道"已作废，不要再据此上报实现缺口，也不要用"停用 + 重建"绕过。
 - 每次编目变更都准备具体的 `edit_note` 和至少一个 `sources` 项
   （`kind` 为 `url` / `publication` / `self`，`citation` 必填，带 `url` 时必须是合法 HTTP(S)）。
   **服务端强制校验**：实体与关系写入缺证据一律返回 `evidence_required`，没有例外可赌。
