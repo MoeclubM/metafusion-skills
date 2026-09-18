@@ -54,7 +54,9 @@
 
 - `POST /api/importer/preview` 对 `entity_type=artist` **静默回退为 `work`**（200），与实例自带 openapi
   的"不静默回退 work"描述矛盾；
-- 读端点容忍坏令牌（当匿名 200），写端点同令牌 401 —— 诊断时不要据此认为"我的令牌还有效"；
+- 读端点容忍坏令牌（当匿名 200），写端点同令牌 401 —— 诊断时不要据此认为"我的令牌还有效"。
+  **PAT 是例外**：`mfp_` 前缀走内省，无效 / 吊销 / 过期在读端点也返回 `401 invalid_token`；
+  账号服务不可达返回 `503 auth_unavailable`（见 [接口归属与写入范围](reference-endpoint-scope.md)）。
 - 停用实体后其关联边无法删除（403）；
 - `release.attributes.publisher` 等 **entity 型引用必须指向可见实体**：指向他人的 draft 会 `invalid_reference`，
   而 `?q=` 检索会返回 draft；
@@ -64,13 +66,23 @@
 
 ## 写库前的自检脚本
 
-主仓库的 `scripts/check_data.py`（只读，需要 `MF_BASE` 一类实例配置）会按定义驱动做一次全量体检：
-**P0/P1 拦门、P2 只报告**。当前口径：
+主仓库的 `scripts/check_data.py`（只读）会按定义驱动做一次全量体检，**分级只由脚本决定**：
 
-- P0：`structure_target_not_visible`；
-- P1：`published_without_translation`、`structure_required_missing`、`structure_target_kind_mismatch`、
-  `relation_endpoint_not_visible`、`relation_code_unknown`、`duplicate_relation`、`group_without_members`、
-  `release_without_medium`；
-- P2：`name_missing_locale`、`name_placeholder`、`name_check_skipped`。
+- **P0 / P1 = 拦门**：脚本报出的 P0/P1 视为发布前必须处理，脚本退出码 1 即表示存在 P0/P1；
+- **P2 = 只报告**：计数但不拦门（名称四语一类问题在这里）；
+- 检查项与判据写在脚本自己的 docstring 里，不在这里另抄一份。
+
+```bash
+BASE=https://<实例> TOKEN=<会话令牌或 PAT> python scripts/check_data.py   # 跑一次，看本次分级与明细
+```
+
+**这里刻意不抄码表**：码名与分级是脚本里的字面量，抄进正文就会在两仓之间静默漂移——脚本改了分级或码名，
+技能照旧拦门，Agent 会误判。要当前生效的「分级 → 码」映射，直接问脚本源码：
+
+```bash
+git -C <主仓库> grep -o -E '\("P[012]", "[a-z_]+"' -- scripts/check_data.py | sort -u
+```
+
+报告里引用某个码时，以脚本当次实际输出的码与分级为准，不要凭记忆写。
 
 发布前跑一次，能提前发现服务端不拦、但会让数据漂移的问题；脚本不可用时在报告里标注"未执行"。
