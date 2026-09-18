@@ -5,9 +5,11 @@
 
 ## 请求头与证据
 
-所有写入接口都是 `/api/catalog/*`，需要登录：
+所有写入接口都是 `/api/catalog/*`，需要登录。凭据三选一（都放在同一个请求头里）：
 
-    Authorization: Bearer <token>
+    Authorization: Bearer <会话令牌 / OAuth 访问令牌 / PAT>
+    # PAT 是 `mfp_` 前缀的长期机器凭据：跑脚本或 Agent 时用它，不要共用某个人的会话令牌；
+    # 它的有效权限 = 账号现时权限 ∩ 创建时选的 scopes（权限码），不够就 403，无效/吊销/过期是 401 invalid_token
     Content-Type: application/json
     Idempotency-Key: <uuid>        # 可选，仅创建实体 / 创建关系
                                    # 幂等键 = 路由 + 用户 + 键值（不含载荷），24h 内重放返回首次结果；

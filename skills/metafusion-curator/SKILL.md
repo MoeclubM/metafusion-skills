@@ -22,7 +22,8 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
 编目写入只发生在**元数据目录**（`/api/catalog/*`、`/api/importer/*`）。其余前缀属于别的系统：
 
 - **账号 auth**（`/api/setup`、`/api/auth/*`、`/api/admin/users*`、`/api/oauth/*`、`/api/oidc/jwks`）：
-  登录、会话、令牌与账号管理。业务权限（谁能编辑哪个实体）仍由目录判断。
+  登录、会话、令牌与账号管理（个人访问令牌 PAT 也在这一侧创建与内省）。业务权限（谁能编辑哪个实体）仍由目录判断。
+  长期跑脚本或 Agent 时用 PAT（`mfp_` 前缀）而不是借用会话令牌，口径见 [接口归属与写入范围](reference-endpoint-scope.md)。
   注意 `/api/admin/*` **不是整段归账号**：`/api/admin/catalog-definitions`、`/api/admin/shelves`、
   `/api/admin/external-databases` 由目录服务提供（定义、货架、外部库管理）。
 - **互动 community**（`/api/community/*`、`/api/users/{id}/favorites`；`/api/favorites/*`、`/api/records/*`
