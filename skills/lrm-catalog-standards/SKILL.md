@@ -9,12 +9,6 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Agent、Co
 全站编目流程、审查结论格式和当前 API 差异见 [metafusion-curator](../metafusion-curator/SKILL.md)；
 使用前先读其 [API 行为参考](../metafusion-curator/reference-api-behavior.md)。
 
-## 统一入口，没有版本前缀
-
-目标实例的唯一入口是 `/api`，**不存在 `/api/v1`、`/api/v2`**。
-先读 `GET /api/openapi.json` 与 `GET /api/catalog/definitions`，再读目标实体。
-下文所有路径都基于统一主干 API；不要在版本不明时尝试写入。
-
 ## 固定实体骨架
 
 | kind | 语义 | 典型字段 |
@@ -56,8 +50,8 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Agent、Co
 
 跨作品收录是**受支持的一等能力**：
 
-1. 为汇编作品（如"某某监督作品集"）建立一个 Work；
-2. 给盒装发行写 `subjects`：汇编作品 `primary`，各被收录作品 `compilation`（附加内容用 `supplement`）；
+1. 只有来源证明汇编本身是独立创作母体时才建立汇编 Work；
+2. 给盒装发行写 `subjects`，覆盖实际收录表达所属的全部 Work；角色从实例 `release_role` 词表选，缺准确角色时报告缺口；
 3. 各分碟的 Medium / Track 用 `contents` 收录各作品自己的 Expression。
 
 服务端会校验 `undeclared_release_subject`：任一收录表达的 Work 未在该发行的 `subjects` 中声明即拒绝保存。
@@ -77,11 +71,11 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Agent、Co
 - **每个实体都要声明 `types`**：`attributes` 的可写字段 = 该实体 `types` 的字段并集；不声明类型就只能写空
   `attributes`，否则 `unknown_field`。10 个 work 类型码、4 个 agent 类型码与逐 kind 字段表见
   [类型码、字段白名单与结构化字段](../metafusion-curator/reference-types-and-fields.md)。
-- **关系码共 29 条**，方向与端点见 [关系码、方向与属性](../metafusion-curator/reference-relations.md)。
+- **种子关系码为 29 条**，方向与端点见 [关系码、方向与属性](../metafusion-curator/reference-relations.md)；实例可由管理员在定义编辑器中增改并发布，以已发布定义为准。
   重点记三条：`pressing_of` 是 release→release 的"再版"（不是收录）；`bonus_included_in` 是
   expression→release|medium 的"特典收录于"；`store_bonus_for` 的 target 是**店铺主体 agent**，不是发行版本。
-  `track` 不能作任何关系端点，`medium` 只能作 `bonus_included_in` 的 target，`content_unit` 不能作 target——
-  分盘/分轨署名、"某话改编自原作第 N 话"这类事实当前表达不了，按实现缺口上报。
+  种子定义中 `track` 不能作任何关系端点，`medium` 只能作 `bonus_included_in` 的 target，`content_unit` 不能作 target——
+  分盘/分轨署名、"某话改编自原作第 N 话"这类事实若目标实例定义仍无对应关系，按实现缺口上报。
 - **模型缺口清单**见 [模型表达不了的事实与上报路径](../metafusion-curator/reference-model-gaps.md)：遇到没有落点的
   真实事实（如漫画类型码、黑胶面位、区码字幕、生卒日期、角色关系），不要用近似数据填充，按"实现缺口"报告。
 
@@ -93,7 +87,7 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Agent、Co
 - `content_unit` / `expression` 的 Work 归属一致，`parent_id` 不越界且 `expression` 上没有 `parent_id`；
 - 章节/分集/曲目等内容只在有来源时创建，不从"有几本书"推造章节；
 - 每个实体声明了正确的 `types`（并集覆盖全部 `attributes` 键；`agent` 的 `attributes` 为空）；查重带了 `types` + 父级作用域；
-- 关系码与两端类型来自实例 definitions（29 条的方向与端点见关系参考：`store_bonus_for` 指向店铺主体，不要指发行版本），层级边没有自环或闭环；
+- 关系码与两端类型来自实例 definitions（种子关系的方向与端点见关系参考：`store_bonus_for` 指向店铺主体，不要指发行版本），层级边没有自环或闭环；
 - `translations` 是对象形状、回退链正确，封面走 `pictures` 且来源可核实；
 - 写入携带具体 `edit_note` 与 `sources`，并在写后读取 `revisions` 验证。
 

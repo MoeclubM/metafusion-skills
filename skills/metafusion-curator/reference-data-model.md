@@ -12,10 +12,10 @@
     ├── content_unit（同 Work 的逻辑章 / 集 / 篇目目录）
     │   └── parent_id：同一 Work 内的目录树
     └── expression（可复用的表达：母版、分集正文、录音、译本）
-        └── release（具体商业发行；经 subjects 声明所收录表达的全部 Work）
-            └── medium（盘、卷、文件集）
-                └── track（容器内位置）
-                    └── contents[]（收录一个或多个 expression，带 position 与 locator）
+    release（具体发行；经 subjects 声明所收录表达的全部 Work）
+    └── medium（盘、卷、文件集）
+        └── track（容器内位置）
+            └── contents[]（引用一个或多个 expression，带 position 与 locator）
 
 `Work` 是创作母体；它的题名不携带季数、卷号、盘号、画质、音质或包装。
 `ContentUnit` 是同一 Work 内的逻辑目录（第几话、第几章、第几卷的篇目），
@@ -56,8 +56,8 @@
 
 跨作品收录是**一等能力**，不是缺口：多作品盒装的正确做法是
 
-1. 为汇编作品（如"某某监督作品集"）建一个 Work；
-2. 给盒装发行写 `subjects`：汇编作品 `primary`，各被收录作品 `compilation`；
+1. 只在来源证明汇编本身是独立创作母体时，为它另建 Work；
+2. 给盒装发行写 `subjects`，覆盖各分碟实际收录表达所属的全部 Work；角色从目标实例 `release_role` 词表选择，若缺准确角色则报告模型缺口；
 3. 各分碟的 Medium / Track 通过 `contents` 收录各作品自己的 Expression。
 
 **反例**：把盒装品番挂在单部作品下，或伪造 `work_id`、直接改库绕过 `undeclared_release_subject`。
@@ -74,15 +74,18 @@
 
 ### 音乐专辑
 
-> **标准范式（OST、迷你专辑、单曲同理）**：专辑 = 一个 `work`（`types: ["album"]`）；曲目 = 其下的
-> `content_unit`（`entry_role: "main"`，`number`/`position` 用官方曲序）；录音 = `expression`（`content_unit_id`
-> 指向对应曲目）；实体盘 = `release` + `medium` + `track`，由 `track.contents` 收录曲目的 `expression`。
+> **跨专辑复用的范式**：专辑 = 一个 `work`（`types: ["album"]`）；有独立作品身份的歌曲 = 各自的
+> `work`（`types: ["song"]`），专辑到歌曲可用已发布定义允许的 `includes` 关系；录音 = 歌曲 Work 下的
+> `expression`；实体盘 = `release` + `medium` + `track`，由 `track.contents` 收录录音。
+> 专辑自身的 `content_unit` 只表达确属该专辑内部的篇目目录，不能把已有独立歌曲 Work 的录音
+> 改挂到专辑 Work 下。发行的 `subjects` 必须同时覆盖专辑和每首被收录歌曲的 Work；若实例词表没有
+> 适合歌曲作为组成部分的 `release_role`，按实现缺口上报，不把 `compilation` 解释成精确语义。
 > 电影《君の名は。》与它的 OST 专辑同名、同 kind（都是 `work`），**靠 `types` 与收录关系区分**——
 > 这正是查重必须带 `types` 的原因。
 
 1. 歌曲创作母体是 Work；具体录音/母带是 Expression（不同编曲版本是不同 Expression，或经 `alternate_take_of` 关联）。
-2. 每张实体或数字专辑是独立 Release，盘片是 Medium，曲目位置是 Track。
-3. 同一录音在该 Work 的多个 Release 中出现时复用同一 Expression；版本差异写在 Release / Medium / Track。
+2. 单曲和专辑各自有真实发行时分别建立 Release；一张专辑的普通版、限定版、地区版也各有 Release，按实物建立 CD、黑胶或特典 BD 的 Medium 与 Track。
+3. 同一录音在单曲和多个专辑发行中出现时复用同一 Expression；版本差异写在 Release / Medium / Track。
 
 ### 图书与漫画
 

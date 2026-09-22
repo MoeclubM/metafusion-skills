@@ -320,11 +320,11 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
 
 - 关系码与允许的两端 kind / 业务类型来自 `GET /api/catalog/definitions` 的 `document.relations`，
   只使用其中 `enabled` 的条目；关系码清单只从 `document.relations` 取。
-  29 条码的方向、端点与属性字段见 [关系码、方向与属性](reference-relations.md)。
+  种子关系码的方向、端点与属性字段见 [关系码、方向与属性](reference-relations.md)。
 - 关系属性固定 9 个字段：`role`、`credit_role`、`character_rank`、`character`（entity → `agent`）、
   `context`（entity → `work`\|`content_unit`\|`expression`\|`release`）、`language`、`begin_date`、`end_date`、`scope`。
 - 服务端拒绝自环（`invalid_endpoints`）与 acyclic 成环（`relation_cycle`；检测只在同一关系码的边集内）；
-  **反向边不会自动判重**：29 条全非 `symmetric`，需要双向语义就建两条边。
+  **反向边是否判重由目标实例定义的 `symmetric` 决定**；种子 29 条全非 `symmetric`。
 - 更新用 `PUT /api/catalog/relations/{id}`；删除用 `DELETE /api/catalog/relations/{id}`，
   **必须带 body**（`expected_version` + `edit_note` + `sources`），不带版本 → 409，完全不带 body → 400。
 

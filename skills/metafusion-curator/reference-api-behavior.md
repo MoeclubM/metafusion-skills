@@ -43,7 +43,7 @@
 - 同一 Track 内同一 Expression **且 locator 完全相同**才判 `duplicate_content`——同一 Expression 按不同时间段
   切片可以在同一 Track 多次出现。
 - **跨 Work 收录受 `undeclared_release_subject` 约束**：Track 收录的 Expression 所属 Work 必须在该发行的 `subjects` 中声明。
-  多作品盒装因此是**受支持能力**：给汇编作品建 Work、在发行上声明各 Work，而不是伪造 work_id 或直接改库。
+  多作品盒装因此是**受支持能力**：在发行上声明实际收录表达所属的各 Work；只有来源证明汇编本身是独立创作母体时才另建汇编 Work。
 - 引用校验（`reference()`）要求被引用实体存在、kind 相符、对当前用户**可见**且未 `deleted` / `merged`，
   否则 `invalid_reference`。草稿默认不对外可见，所以不能把未发布实体挂到公开条目上。
 
@@ -159,7 +159,7 @@
 - **关系**：`POST /api/catalog/relations`、`PUT /api/catalog/relations/{id}`、`DELETE /api/catalog/relations/{id}`。
   载荷是 `{relation:{type,source_id,target_id,position,attributes}, expected_version, edit_note, sources}`。
   **DELETE 也必须带 body**（`expected_version` + `edit_note` + `sources`）：不带版本 → `409 version_conflict`，
-  完全不带 body → `400 invalid_payload`；版本号从 `entities/{id}/relations` 的返回项里取（单条关系的 GET 只有这一个来源）。29 条关系码的方向、端点与属性字段见 [关系码、方向与属性](reference-relations.md)。
+  完全不带 body → `400 invalid_payload`；版本号从 `entities/{id}/relations` 的返回项里取（单条关系的 GET 只有这一个来源）。种子关系码的方向、端点与属性字段见 [关系码、方向与属性](reference-relations.md)。
 - **证据是强制的**：所有实体与关系写入都校验 `edit_note` 非空且 `sources` 至少一条，否则 `evidence_required`。
   `sources[].kind` 只能是 `url` / `publication` / `self`，`citation` 必填；`kind=url` 或带 `url` 时必须是合法 HTTP(S)
   （无用户信息），否则 `invalid_source`。图片 `pictures[].source` 同样校验。

@@ -33,7 +33,7 @@
 5. **Medium** 按实际包装建立，填 position、名称与载体规格字段。
 6. **Track** 按实际位置建立，用 `contents` 的 `expression_id` / `position` / `locator` 表达收录。
 
-多作品盒装**不再标为模型缺口**：按 [实体与层级数据模型](reference-data-model.md) 建汇编 Work + `subjects`，
+多作品盒装**不再标为结构缺口**：按 [实体与层级数据模型](reference-data-model.md) 用 `subjects` 声明实际收录的 Work；汇编本身有独立创作身份时才另建 Work，
 不要伪造 `work_id` 或用直接 SQL 绕过 `undeclared_release_subject`。
 
 ## 第四步：题名、翻译和封面预检

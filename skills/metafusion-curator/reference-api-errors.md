@@ -66,13 +66,13 @@
 
 | 错误码 | 含义 | 修复动作 |
 | --- | --- | --- |
-| `invalid_relation_type` | 关系码不存在或未启用 | 只用 `definitions.document.relations` 里 `enabled` 的码（29 条清单见 [关系码、方向与属性](reference-relations.md)） |
+| `invalid_relation_type` | 关系码不存在或未启用 | 只用 `definitions.document.relations` 里 `enabled` 的码（种子快照见 [关系码、方向与属性](reference-relations.md)） |
 | `invalid_endpoints` | 两端 kind 不符合该关系的 `source_kinds`/`target_kinds`（**自环也走这里**） | 按定义选两端；自环一律不支持 |
 | `relation_cycle` | 声明 `acyclic` 的关系会成环 | 改成表达真实层级的方向。检测**只在同一关系码的边集内**进行，跨码长路径环看不见 |
 | `duplicate_relation` | 同类型、同端点、**同属性**的边已存在（`attributes` 缺省与 `{}` 视为同一条） | 用不同属性区分（不同 `credit_role` / `character` / `language`）或先删旧边。**只改 `position` 无效**，会变成 `constraint_violation` |
 | `merge_relation_conflict` | 合并会产生"自己指向自己"的边 | 先删掉造成自环的那条关系再合并 |
 
-**反向边不会被自动判重**：只有声明 `symmetric=true` 的关系才检查反向重复边，当前 29 条**全部 `symmetric=false`**，
+**反向边是否判重由 `symmetric` 决定**：声明 `symmetric=true` 的关系会检查反向重复边；种子 29 条**全部 `symmetric=false`**，
 A→B 与 B→A 同类型的两条边都合法——需要双向语义就建两条。
 
 ## 生命周期与并发
@@ -94,12 +94,12 @@ A→B 与 B→A 同类型的两条边都合法——需要双向语义就建两�
 | --- | --- | --- |
 | `rate_limited`（429） | 超过该路由配额（按 **IP + 路由**共享）：实体检索 / `expressions/details` / `tags` 120/min、货架 feed 60/min、对比与 `importer/preview` 10/min | 读 `Retry-After`（实测 25–57 秒）退避后再试；不要立刻重放写入 |
 
-## 当前不可达的错误码（"没遇到"不等于漏测）
+## 种子定义中不可达的错误码（"没遇到"不等于漏测）
 
 - `invalid_endpoint_types`：29 条关系的 `source_types` / `target_types` 全为 `null`，白名单不存在；
 - `cardinality_exceeded`：29 条关系的 `max_outgoing` / `max_incoming` 全为 `0`，基数上限不存在。
 
-这两条实现里存在，但当前已发布定义下无法触发。检查清单里标注"当前不适用"，不要写成"已核验通过"。
+这两条实现里存在；目标实例若扩展了端点类型或基数限制，就可能触发。检查清单按该实例已发布定义标注适用性，不要把种子快照当运行态。
 
 ## 遇到没见过的错误
 

@@ -26,8 +26,8 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
   长期跑脚本或 Agent 时用 PAT（`mfp_` 前缀）而不是借用会话令牌，口径见 [接口归属与写入范围](reference-endpoint-scope.md)。
   注意 `/api/admin/*` **不是整段归账号**：`/api/admin/catalog-definitions`、`/api/admin/shelves`、
   `/api/admin/external-databases` 由目录服务提供（定义、货架、外部库管理）。
-- **互动 community**（`/api/community/*`、`/api/users/{id}/favorites`；`/api/favorites/*`、`/api/records/*`
-  在当前部署返回 404）：论坛、条目短评、收藏与互动记录。它们**不是**元数据事实，
+- **互动 community**（`/api/community/*`、`/api/favorites/*`、`/api/users/{id}/favorites`、`/api/users/{id}/stats`、`/api/messages/*`）：
+  论坛、条目短评、收藏与私信。它们**不是**元数据事实，
   不要通过目录接口写入，也不要为它们建实体。
 - **目录的其它只读入口**：`GET /api/exchange/entities/{id}`（导出快照）、
   `POST /api/exchange/proposals`（外部提案，落 `pending_review`，不直接写实体）、
@@ -96,7 +96,7 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 - `track.contents` 是唯一收录来源，项为 `{expression_id, position, locator}`；
   `locator` 保存页码、章节、时间段或路径。整轨收录允许 locator 为空；
   有其它定位子字段时必须给 `relative_to` 锚点。
-- **多作品盒装是受支持能力**：建汇编 Work 并在 `subjects` 声明各作品即可。
+- **多作品盒装是受支持能力**：在 `subjects` 声明载体实际收录的各个 Work；只有来源证明汇编本身是独立创作母体时才另建汇编 Work。
   不要把盒装品番挂到其中一部作品，也不要用伪造 `work_id`、直接 SQL 或改触发器绕过
   `undeclared_release_subject` 校验。
 
@@ -129,7 +129,7 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 - 关系写入只使用 `GET /api/catalog/definitions` 中 `enabled` 的关系码与允许的两端 kind / 业务类型，
   经由 `POST /api/catalog/relations`、`PUT` / `DELETE /api/catalog/relations/{id}`。
   **删除关系必须在 body 里带 `expected_version`**，与 `edit_note` / `sources` 同体，否则 409 / 400。
-  关系码的方向、属性字段与端点限制见 [关系码、方向与属性](reference-relations.md)；
+  关系码的方向、属性字段与端点限制见 [关系码、方向与属性](reference-relations.md) 的种子快照，实际以目标实例已发布定义为准；
   不要把来源名称直接写成 agent ID，也不要为同一个角色拆出重复实体。
 
 ### 6. 写后验证
@@ -183,6 +183,6 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 - [质量检查清单](reference-qa-checklist.md)：题名、层级、关系、封面和审计检查。
 - [API 载荷模板](reference-api-templates.md)：统一实体入口的字段与兼容路径的使用边界。
 - [类型码、字段白名单与结构化字段](reference-types-and-fields.md)：`types` 如何决定可写属性、逐 kind 字段表、词表全量、locator/attachments/infobox 的形状。
-- [关系码、方向与属性](reference-relations.md)：29 条关系码的方向与端点、关系属性 9 字段、多边与成环口径。
+- [关系码、方向与属性](reference-relations.md)：种子关系码的方向与端点、关系属性及多边与成环口径。
 - [实体与层级数据模型](reference-data-model.md)：跨媒介层级和表达复用原则、常见建模范式。
 - [模型缺口与上报路径](reference-model-gaps.md)：表达不了的事实清单、扩展 definitions 的正规通道。

@@ -9,9 +9,9 @@
 | --- | --- | --- | --- |
 | 元数据目录 catalog | 八类实体、动态定义、关系、结构、修订、检索、货架、外部权威库、快照导出与外部提案（`catalog.*`） | `/api/catalog/*`（含 `/api/catalog/me/home-preferences`）、`/api/importer/*`、`/api/exchange/*`、`/api/admin/catalog-definitions`、`/api/admin/shelves`、`/api/admin/external-databases`、`/api/openapi.json` | MetaFusion |
 | 账号 auth | 用户、会话、OAuth 客户端/授权码/令牌、RSA 密钥（`auth.*`） | `/api/setup`、`/api/auth/*`、`/api/admin/users*`、`/api/oauth/*`、`/api/oidc/jwks`、`/api/.well-known/openid-configuration` | metafusion-auth |
-| 互动 community | 论坛板块/主题/回复/标签、条目短评、收藏、互动记录（`community.*`） | `/api/community/*`、`/api/users/{id}/favorites`；`/api/favorites/*`、`/api/records/*` 在当前部署返回 404 | metafusion-community |
+| 互动 community | 论坛板块/主题/回复/标签、条目短评、收藏、私信（`community.*`） | `/api/community/*`、`/api/favorites/*`、`/api/messages/*`、`/api/users/{id}/favorites`、`/api/users/{id}/stats` | metafusion-community |
 | 存储 storage | 物理文件、sha256 内容寻址、对象存储直传、文件→实体绑定、下载与预览的访问控制（`storage.*`） | `/api/storage/*` | metafusion-storage |
-| 边缘网关 gateway | 无（只有路由表） | `/`、`/docs`，按前缀分流到上述单元 | metafusion-api-gateway |
+| 边缘网关 gateway | 无（只有路由表） | `/`、`/docs`，按前缀分流到上述单元 | MetaFusion 的 `deploy/nginx.conf`；`metafusion-api-gateway` 存放切流自检脚本 |
 
 > 上表是**分工口径**，不是"实例已经提供"的清单：某组前缀在具体实例是否可用，**按实例响应为准**
 > （返回 404 即该实例没有提供这组端点），不要在报告里写成已有能力。
@@ -22,7 +22,8 @@
 别把"我只有编目权限"读成"目录里没有定义/货架管理入口"。
 
 网关**按前缀分流**，不为切换服务而改前端调用点。`/api/users/{id}/favorites` 与用户资料同前缀，网关用精确正则
-`^/api/users/[^/]+/favorites$` 单独分流到互动服务，其余 `/api/users/*` 仍归目录。
+`^/api/users/[^/]+/favorites$` 单独分流到互动服务；`/api/users/{id}/stats` 也归互动，
+`/api/users/{id}` 归账号，`/api/users/{id}/contributions` 归目录。
 
 **编目者只写目录。** 论坛、短评、收藏、互动记录不是元数据事实：不要通过目录接口写入它们，也不要为它们在目录里建实体。
 
@@ -43,7 +44,7 @@
   修订与生命周期（草稿 / 待审 / 发布 / 合并 / 停用）、检索与货架、外部权威库预设。它是"作品是什么"的唯一来源。
 - **账号**：注册与登录、会话轮转、令牌签发与吊销、OAuth 2.0 / OIDC、账号与角色管理。
   **业务权限（谁能编辑哪个实体）由目录自己判断**，账号服务不介入。
-- **互动**：论坛、条目短评、收藏、评分/进度/持有记录。它只保存用户互动，不保存实体元数据。
+- **互动**：论坛、条目短评、收藏与私信。它只保存用户互动，不保存实体元数据。
 - **存储**：物理文件与哈希、直传、绑定、下载与预览。它**不保存**目录结构（不复制作品/专辑/曲目表），
   目录**不保存**对象存储物理路径。
 
