@@ -116,8 +116,7 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
   它是状态机里**唯一**的降级通道，只接受 `published`：已发布条目退回 `draft`（回到草稿可继续编辑，修订历史留痕，
   同事务写一条 `entity.unpublished` 事件）；`draft` / `pending_review` 没有可下架的内容，`deleted` / `merged` 是终态，
   四种状态一律 `400 invalid_status`。版本不符 `409 version_conflict`，缺证据 `evidence_required`。
-  注意区分两件事：普通 PUT 提交降级仍返回 `use_lifecycle_endpoint`（这是"别用 PUT 改状态"），
-  **不等于没有通道**——旧版技能写的"当前没有退回通道"已作废，不要再据此上报实现缺口，也不要用"停用 + 重建"绕过。
+  普通 PUT 提交降级仍返回 `use_lifecycle_endpoint`；退回须使用下架端点。
 - 每次编目变更都准备具体的 `edit_note` 和至少一个 `sources` 项
   （`kind` 为 `url` / `publication` / `self`，`citation` 必填，带 `url` 时必须是合法 HTTP(S)）。
   **服务端强制校验**：实体与关系写入缺证据一律返回 `evidence_required`，没有例外可赌。
@@ -143,7 +142,7 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 - 封面 URL、图片比例和来源符合实例规则；
 - 服务器实际返回的 revision / 审计记录与报告一致，未请求修改的数据没有丢失。
 
-关系审查要检查自环、启用状态、端点类型、重复反向边和层级边的长路径。请求成功不等于全库 DAG 已证明；
+关系审查要检查自环、启用状态、端点类型、反向边语义和层级边的长路径。请求成功不等于全库 DAG 已证明；
 请把结论限定在已复核的局部，并把并发限制或遍历截断作为实现风险报告，而不是默认为安全。
 
 ## 文件与存储
@@ -155,8 +154,7 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 
 ## 多语言与封面约束
 
-- 所有实体的 `translations` 都是**对象**：`{"zh-CN":{"title","summary","aliases"}}`。
-  跨层复制旧的数组形状会被拒收：全站只认这一种对象形状。
+- 所有实体的 `translations` 都是**对象**：`{"zh-CN":{"title","summary","aliases"}}`；数组形状会被拒收。
 - 关系类型、角色、载体格式、包装和标签的显示名来自 `GET /api/catalog/definitions` 与其词表，
   前端不新增硬编码术语。
 - 定义、货架、外部库的 `names` 必须**四语齐备**（`zh-CN`、`zh-TW`、`en-US`，加 `ja` 或 `ja-JP`），
@@ -179,7 +177,6 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 - [API 错误码与修复动作](reference-api-errors.md)：常见拒绝码的含义与改法（证据 / 字段 / 词表 / 结构归属 / 关系 / 并发 / 权限）。
 - [接口归属与写入范围](reference-endpoint-scope.md)：哪些前缀属于编目、哪些不属于，以及"实体是否存在/可见"该问谁。
 - [文件上传与绑定](reference-file-upload.md)：内容寻址与秒传、预签名直传、`binding_role`、读取可见性口径。
-- [编目 SOP](reference-sop-workflows.md)：从考据到写后核对的操作顺序。
 - [质量检查清单](reference-qa-checklist.md)：题名、层级、关系、封面和审计检查。
 - [API 载荷模板](reference-api-templates.md)：统一实体入口的字段与兼容路径的使用边界。
 - [类型码、字段白名单与结构化字段](reference-types-and-fields.md)：`types` 如何决定可写属性、逐 kind 字段表、词表全量、locator/attachments/infobox 的形状。

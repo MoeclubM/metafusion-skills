@@ -154,8 +154,7 @@
   同事务写一条 `entity.unpublished` 事件（不计入贡献统计的 `audit_actions`，那里只数删除与合并）。
   `draft` / `pending_review` 没有可下架的内容、`deleted` / `merged` 是终态，四种情况都 `400 invalid_status`；
   版本不符 `409 version_conflict`，缺证据 `evidence_required`。
-  `published` 条目 PUT 回 `draft` 仍被 `use_lifecycle_endpoint` 拒绝——那只是"状态变更不走 PUT"，
-  **不是没有退回通道**：旧版技能写的"降级/退回当前没有通道"已作废，不要再按实现缺口上报，也不要用"停用 + 重建"绕过。
+  `published` 条目 PUT 回 `draft` 仍被 `use_lifecycle_endpoint` 拒绝；退回须使用下架端点。
 - **关系**：`POST /api/catalog/relations`、`PUT /api/catalog/relations/{id}`、`DELETE /api/catalog/relations/{id}`。
   载荷是 `{relation:{type,source_id,target_id,position,attributes}, expected_version, edit_note, sources}`。
   **DELETE 也必须带 body**（`expected_version` + `edit_note` + `sources`）：不带版本 → `409 version_conflict`，

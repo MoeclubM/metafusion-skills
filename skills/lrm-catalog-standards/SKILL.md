@@ -79,18 +79,6 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Agent、Co
 - **模型缺口清单**见 [模型表达不了的事实与上报路径](../metafusion-curator/reference-model-gaps.md)：遇到没有落点的
   真实事实（如漫画类型码、黑胶面位、区码字幕、生卒日期、角色关系），不要用近似数据填充，按"实现缺口"报告。
 
-## 编目检查
-
-- 作品题名不包含版本污染词，且别名没有把版本名伪装成主名；
-- Release 有来源支持的版名、日期、厂牌/出版者、条码或品番，且 `subjects` 覆盖全部收录的 Work；
-- Medium 数量与 Track 顺序和真实包装一致，不存在虚构盘片；
-- `content_unit` / `expression` 的 Work 归属一致，`parent_id` 不越界且 `expression` 上没有 `parent_id`；
-- 章节/分集/曲目等内容只在有来源时创建，不从"有几本书"推造章节；
-- 每个实体声明了正确的 `types`（并集覆盖全部 `attributes` 键；`agent` 的 `attributes` 为空）；查重带了 `types` + 父级作用域；
-- 关系码与两端类型来自实例 definitions（种子关系的方向与端点见关系参考：`store_bonus_for` 指向店铺主体，不要指发行版本），层级边没有自环或闭环；
-- `translations` 是对象形状、回退链正确，封面走 `pictures` 且来源可核实；
-- 写入携带具体 `edit_note` 与 `sources`，并在写后读取 `revisions` 验证。
-
 ## 参考
 
 - [metafusion-curator](../metafusion-curator/SKILL.md)
