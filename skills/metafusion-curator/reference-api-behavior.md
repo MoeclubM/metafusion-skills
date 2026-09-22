@@ -89,6 +89,8 @@
   （`semantics: locating`，本版定位，随排版变化）与 `time_start_ms` / `time_end_ms`（`semantics: content`，
   实际内容范围，参与版本对比）。**有任一子字段就必须给 `relative_to`**；显式配对的起终点
   （`page_end`↔`page_start`、`time_end_ms`↔`time_start_ms`）只在**两端都有值**时校验大小，终点单独存在不报错。
+- Track 的 `locator` / `inclusion_attributes` 方案可配置 `medium_formats`（`format` 词表码）；匹配所属 Medium 的格式，空数组不限。没有匹配方案时回退全局组。改动 Medium 格式会回放现有 Track，冲突返回 `track_scheme_conflict`。
+- `role` 词表项的 `is_bonus` 控制发行详情的附赠内容分组；新增用途码可在后台勾选，不依赖词项代码。存量定义若缺此标记，须经后台发布修订才会生效。
 - `inclusion_attributes` / `subject_attributes` **当前是空组**：`contents[].attributes` 与 `subjects[].attributes`
   写任何键都是 `unknown_field`。缺落点的事实按 [模型缺口与上报路径](reference-model-gaps.md) 上报，
   不要塞进 `locator` 或 `attachments` 凑形状。
@@ -107,6 +109,7 @@
 | GET | `/api/catalog/entities/{id}/revisions` | 修订历史 |
 | GET | `/api/catalog/entities/{id}/relations` | 正向与反向关系，响应同时带回对端 `entities` |
 | GET | `/api/catalog/entities/{id}/occurrences` | 反向收录：expression = 自身收录，content_unit = 其表达，work = 其表达 |
+| GET | `/api/catalog/releases/{id}/toc` | 同一快照读取发行、按位置排序的 Medium / Track、去重的可见 Expression 与定义版本 |
 | POST | `/api/catalog/expressions/details` | 批量取表达详情（body `{ids:[...]}`，上限 500） |
 | GET | `/api/catalog/compare?ids=` | 对比 2–6 个发行 |
 | GET | `/api/catalog/shelves`、`/api/catalog/shelves/feed` | 货架规则与求值结果 |
