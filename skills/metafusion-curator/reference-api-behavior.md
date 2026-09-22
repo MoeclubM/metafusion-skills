@@ -82,7 +82,8 @@
   kind 的多语言名在**顶层** `kinds`。
 - `document.structure` 是**归属必填与父子作用域的唯一机器可读来源**：`expression` / `content_unit` → `work_id`
   （`required: true`），`medium` → `release_id`，`track` → `medium_id`；`parent_id` 由 `scoped_by` 限定同容器；
-  `release` 是 `"fields": null, "subjects": true`（**没有 `work_id`**）。不必凭记忆背这套规则。
+  `release` 是 `"fields": null, "subjects": true`（**没有 `work_id`**）。固定归属外键及 Release `subjects` / Track `contents`
+  必须与数据库约束一致；草稿中的非空 `structure` 若改变这些规则会返回 `fixed_structure_mismatch`。业务关系码可在后台 GUI 扩展。
 - `locator` 的键集合不硬编码，来自 definitions 的 `locator` 组。种子默认含 `relative_to`
   （enum `locator_reference`，**只有 `medium` / `track` 两个取值**）、`page_start` / `page_end` / `path` / `chapter`
   （`semantics: locating`，本版定位，随排版变化）与 `time_start_ms` / `time_end_ms`（`semantics: content`，
