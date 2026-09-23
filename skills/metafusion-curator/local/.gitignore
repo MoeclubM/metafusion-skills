@@ -1,0 +1,5 @@
+# 本目录只提交说明和通用工具；本机凭据永远不提交。
+*
+!.gitignore
+!README.md
+!metafusion-api.mjs

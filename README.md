@@ -11,7 +11,7 @@
 
 | 技能 | 路径 | 说明 |
 |---|---|---|
-| **metafusion-curator** | [`skills/metafusion-curator/`](skills/metafusion-curator/SKILL.md) | 站点数据的读写与审查总则：查重（含 `types`）、层级归属、关系审查、封面、多语言、证据与写后核验；附 API 行为、错误码、接口归属、文件上传、数据模型、类型码与字段白名单（`reference-types-and-fields.md`）、关系码全表（`reference-relations.md`）、模型缺口清单（`reference-model-gaps.md`）参考。 |
+| **metafusion-curator** | [`skills/metafusion-curator/`](skills/metafusion-curator/SKILL.md) | 站点数据的读写与审查总则：查重（含 `types`）、层级归属、关系审查、封面、多语言、证据与写后核验；附本地凭据与单一通用客户端、API 行为、错误码、接口归属、文件上传、数据模型、类型码与字段白名单（`reference-types-and-fields.md`）、关系码全表（`reference-relations.md`）、模型缺口清单（`reference-model-gaps.md`）参考。 |
 | **lrm-catalog-standards** | [`skills/lrm-catalog-standards/`](skills/lrm-catalog-standards/SKILL.md) | MetaFusion LRM 编目与发行版命名规范：按当前 Agent / Collection / Work / ContentUnit / Expression / Release / Medium / Track 边界处理跨媒介实体与发行版命名。 |
 
 两个技能互为补充：`metafusion-curator` 是数据操作与审查总则，`lrm-catalog-standards` 是发行版命名与内容复用的细分规范。
@@ -38,6 +38,8 @@ cp -r metafusion-skills/skills/lrm-catalog-standards  <your-repo>/.cursor/skills
 ```
 
 其他 Agent 平台请复制到对应技能目录（如 ZCode 的 `~/.agents/skills/`、Claude Code 的 `.claude/skills/`）。两个技能建议同时安装：`lrm-catalog-standards` 内部以相对路径引用 `metafusion-curator`。
+
+`metafusion-curator/local/` 包含一个通用 API 客户端和本机凭据约定；复制技能后，在该目录创建已忽略的 `credentials.json` 即可。真实令牌只留在本机，不要提交或粘贴到对话。
 
 ## 许可、来源与编目边界
 
