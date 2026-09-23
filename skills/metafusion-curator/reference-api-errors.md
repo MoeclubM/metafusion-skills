@@ -84,8 +84,8 @@ A→B 与 B→A 同类型的两条边都合法——需要双向语义就建两�
 | `invalid_status` | lifecycle 作用在 `deleted`/`merged` 条目上，或状态值非法；下架端点收到的实体不是 `published`（`draft`/`pending_review` 没有可下架的内容，`deleted`/`merged` 是终态） | 先 `GET` 读回 `status`：已是 `draft` 就不必下架；终止态不可再走 lifecycle，要恢复只能新建 |
 | `invalid_merge_target` | 合并目标与源不同 kind／不同归属／不同父级，或目标未发布 | 只合并同一层级、同一容器里的重复建档，目标必须 `published` |
 | `forbidden`（403） | 角色不足：普通角色碰已发布条目、非管理员走 lifecycle、member 建关系或调 importer；**停用（`deleted`/`merged`）实体上的关联边删不掉也走这里** | 用 `catalog.entity.edit` 维护已发布条目；发布/合并/停用归 `catalog.lifecycle.manage`；悬空边清理属实例侧缺口，上报而不是反复重试 |
-| `authentication_required`（401） | **写端点**没有有效令牌（会话 / OAuth 令牌缺失或验签失败） | 检查本地凭据文件是否指向正确凭据；正常本地读写本身不要求换令牌。注意读端点匿名/坏令牌仍返回 200，所以"读得通"证明不了令牌有效 |
-| `invalid_token`（401） | **PAT（`mfp_` 前缀）** 无效 / 已吊销 / 已过期 / 账号被封禁，不细分原因；前缀后的长度或字符集不合契约的在该服务本地直接拒 | 别重试同一张：先核对 `local/credentials.json` 指向的 PAT 是否写错、吊销或到期；只有确认凭据失效后才在用户授权下更换。正常完成编辑不自动换 PAT；读端点也返回 401，不要把它当成"读接口不该报错" |
+| `authentication_required`（401） | **写端点**没有有效令牌（会话 / OAuth 令牌缺失或验签失败） | 核对本地凭据或重新登录；读端点返回 200 不代表写权限凭据有效 |
+| `invalid_token`（401） | **PAT（`mfp_` 前缀）** 无效 / 已吊销 / 已过期 / 账号被封禁，不细分原因 | 确认凭据失效后再选择其他有效凭据；不要因任务结束自动轮换 |
 | `auth_unavailable`（503） | PAT 请求问不到账号服务：内省端点不可达 / 超时 / 该服务没配 `AUTH_URL` | 依赖故障，退避重试即可；**不要**当凭据问题去换令牌（换令牌同样 503） |
 
 ## 限流

@@ -26,8 +26,6 @@
 不得含用户信息。缺 `edit_note` 或缺 `sources` 会被拒绝为 `evidence_required`——**这是服务端强制的，不是建议**。
 作者自述用 `kind: "self"`，并如实标注。
 
-本机 Agent 使用 `local/metafusion-api.mjs` 与已忽略的 `local/credentials.json`，不要把真实令牌写进任务脚本、命令、报告或提交；所有编目任务共用该客户端。
-
 ## 写入信封
 
 创建与更新共用同一信封：`POST /api/catalog/entities`（`expected_version` 必须为 0、`entity.id` 留空）与

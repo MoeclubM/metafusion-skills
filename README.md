@@ -39,7 +39,7 @@ cp -r metafusion-skills/skills/lrm-catalog-standards  <your-repo>/.cursor/skills
 
 其他 Agent 平台请复制到对应技能目录（如 ZCode 的 `~/.agents/skills/`、Claude Code 的 `.claude/skills/`）。两个技能建议同时安装：`lrm-catalog-standards` 内部以相对路径引用 `metafusion-curator`。
 
-`metafusion-curator/local/` 包含一个通用 API 客户端和本机凭据约定；复制技能后，在该目录创建已忽略的 `credentials.json` 即可。真实令牌只留在本机，不要提交或粘贴到对话。
+`metafusion-curator/local/` 包含通用 API 客户端；复制技能后创建已忽略的 `credentials.json` 即可，令牌不要提交。
 
 ## 许可、来源与编目边界
 

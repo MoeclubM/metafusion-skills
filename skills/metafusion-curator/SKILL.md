@@ -17,12 +17,9 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
    - **本机源码服务**：先检查 `scripts/verify_api_contract.py` 是否存在，读取其 `--help` 并使用明确的本地 base URL。不要凭记忆执行，也不要把源码/仓库内容扫描当作运行时核验。
 4. 技能资料与目标实例不一致时，记录实际 URL、核验时间和差异；暂停有风险的写入。被拒后按错误码修正，不猜字段或绕过接口改库。
 
-## 本地凭据与通用工具
+## 本地调用
 
-- 本机长期运行的 Agent 把目标实例与 PAT 放在技能目录的本地 `local/credentials.json`，由同目录 `.gitignore` 排除；用 `local/metafusion-api.mjs` 发起 API 请求。格式与用法见 [本地凭据与通用客户端](local/README.md)。
-- 本地 Agent 可以读取和修改该凭据文件，但不得把令牌值输出到对话、命令输出、日志、报告或提交。凭据只发送到 `baseUrl` 指向的目标实例。
-- **正常从本地文件读取凭据并完成 API 读写不等于泄露，不要因任务结束而创建、吊销或轮换凭据。**只有凭据实际进入聊天、日志、版本控制或非目标服务，或目标实例明确返回 `401 invalid_token` 时，才停止使用并按用户授权处理。
-- 所有任务共用这一个通用客户端；不要按实体、批次或 Agent 复制操作脚本。
+本机 Agent 可直接读写已忽略的 `local/credentials.json`，并用 `local/metafusion-api.mjs` 调用目标实例。令牌值不进入对话、日志、报告或提交；正常本地调用无需轮换凭据。任务直接复用这个客户端，不再按批次生成脚本；格式见 [本地凭据与通用客户端](local/README.md)。
 
 ## 写入范围（只写目录）
 
@@ -30,7 +27,7 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
 
 - **账号 auth**（`/api/setup`、`/api/auth/*`、`/api/admin/users*`、`/api/oauth/*`、`/api/oidc/jwks`）：
   登录、会话、令牌与账号管理（个人访问令牌 PAT 也在这一侧创建与内省）。业务权限（谁能编辑哪个实体）仍由目录判断。
-  长期跑脚本或 Agent 时用 PAT（`mfp_` 前缀）而不是借用会话令牌；本机默认由 `local/metafusion-api.mjs` 从已忽略的 `local/credentials.json` 读取，口径见 [接口归属与写入范围](reference-endpoint-scope.md)。
+  长期运行的 Agent 通常使用 PAT（`mfp_` 前缀）；本机默认从 `local/credentials.json` 读取，口径见 [接口归属与写入范围](reference-endpoint-scope.md)。
   注意 `/api/admin/*` **不是整段归账号**：`/api/admin/catalog-definitions`、`/api/admin/shelves`、
   `/api/admin/external-databases` 由目录服务提供（定义、货架、外部库管理）。
 - **互动 community**（`/api/community/*`、`/api/favorites/*`、`/api/users/{id}/favorites`、`/api/users/{id}/stats`、`/api/messages/*`）：
