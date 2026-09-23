@@ -10,12 +10,12 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
 
 ## 先确认运行时口径
 
-1. 目标实例的统一入口是 `/api`，全站只有这一套前缀；
-   `/api/v1/catalog/works`、`/api/v2/catalog/entities` 这类带版本号的路径调不通，版本不明时不要尝试写入。
-2. 读取 [API 行为参考](reference-api-behavior.md) 与 [API 错误码与修复动作](reference-api-errors.md)，
-   再核对目标实例的 `GET /api/openapi.json`、`GET /api/catalog/definitions` 和当前用户角色。
-   示例里的字段名与枚举不能代替运行时验证；写库被拒时先查错误码表再改载荷。
-3. 技能文档与实例响应不一致时，暂停有风险的写入并记录差异；不要猜字段，也不要绕过接口改库。
+1. 目标实例统一使用 `/api`；版本或端点不明时不要尝试写入。
+2. 先读 [API 行为参考](reference-api-behavior.md) 与 [API 错误码与修复动作](reference-api-errors.md)，再核对实例的 `GET /api/openapi.json`、`GET /api/catalog/definitions` 和当前用户角色。示例字段不能代替运行时验证。
+3. 按使用目标做契约核验：
+   - **线上实例**：直接检查用户提供或已确认的实例 URL 的 OpenAPI 与 definitions；写入前确认该实例、身份与权限。
+   - **本机源码服务**：先检查 `scripts/verify_api_contract.py` 是否存在，读取其 `--help` 并使用明确的本地 base URL。不要凭记忆执行，也不要把源码/仓库内容扫描当作运行时核验。
+4. 技能资料与目标实例不一致时，记录实际 URL、核验时间和差异；暂停有风险的写入。被拒后按错误码修正，不猜字段或绕过接口改库。
 
 ## 写入范围（只写目录）
 
