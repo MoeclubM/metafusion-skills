@@ -39,7 +39,10 @@ cp -r metafusion-skills/skills/lrm-catalog-standards  <your-repo>/.cursor/skills
 
 其他 Agent 平台请复制到对应技能目录（如 ZCode 的 `~/.agents/skills/`、Claude Code 的 `.claude/skills/`）。两个技能建议同时安装：`lrm-catalog-standards` 内部以相对路径引用 `metafusion-curator`。
 
-## 许可与来源
+## 许可、来源与编目边界
 
 技能内容以**目标实例的实际响应**为准校准：接口行为、枚举与字段码都会随实例配置演进，
 动手前先读 `GET /api/openapi.json` 与 `GET /api/catalog/definitions`。
+编目事实优先核对出版/发行/制作/权利方等一手来源；逐条写清引文所支持的字段，
+未知、冲突或未核实内容必须留空并标注，不猜测或编造。封面优先权利方提供的高清原图，并核实许可/授权；
+来源链接不自动授予图片使用权，权利不明时不使用。

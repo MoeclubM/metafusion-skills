@@ -49,8 +49,7 @@
 - [ ] 回退顺序为请求 locale → `en-US` → `original_language` → 基础 `title`，展示值没有回写基础题名。
 - [ ] 发布的实体至少有一条翻译（否则服务端返回 `translation_required`）。
 - [ ] 标签、角色、关系类型、载体格式等代码来自 definitions / 词表，没有硬编码术语。
-- [ ] `pictures[].url` 是绝对 HTTP(S) 地址（相对路径会被判 `invalid_picture`），
-      `source` 满足证据规则；封面来自可核实的官方或授权来源，无占位图、拉伸和水印。
+- [ ] `pictures[].url` 是绝对 HTTP(S) 地址（相对路径会被判 `invalid_picture`），`source` 指向并说明具体图源；封面优先使用权利方/出版发行方提供的高清原图，已核对并记录许可或明确授权依据（官方来源本身不等于再利用许可）。权利不明时不使用、留空并报告；无占位图、拉伸、裁切伪装或水印。
 - [ ] 画幅比例若写入，位于实例定义声明的字段下；没有提交顶层 `cover_aspect`。
 - [ ] 动过定义/货架/外部库名称的：`names` 四语齐备（`zh-CN` / `zh-TW` / `en-US` + `ja` 或 `ja-JP`），否则 `four_locale_names_required`（这是 `names`，与实体 `translations` 两套形状）。
 
