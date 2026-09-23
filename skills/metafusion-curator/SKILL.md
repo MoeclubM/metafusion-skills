@@ -73,9 +73,7 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
 `medium` / `track` 的 `parent_id` 只能指向同一 Release / Medium；`expression` **没有 `parent_id`**。
 **`release` 没有 `work_id`**：被其载体实际收录表达的 Work 全部经 `subjects` 声明。
 
-**每个实体都要声明 `types`**：`attributes` 的可写字段 = 该实体 `types` 的字段并集，未声明类型时
-`attributes` 只能为空，写任何键都是 `unknown_field`；类型码的 `kinds` 不含本 kind 则 `invalid_type`。
-类型码清单、逐 kind 可写字段与结构化字段形状见 [类型码、字段白名单与结构化字段](reference-types-and-fields.md)。
+**每个实体都要声明 `types`**；它决定 `attributes` 的可写字段。字段白名单、错误码与载荷形状见[类型码、字段白名单与结构化字段](reference-types-and-fields.md)。
 
 ### 3. 清洗题名与分离规格
 
@@ -106,25 +104,10 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 - 创建用 `POST /api/catalog/entities`（`expected_version` 为 0、`entity.id` 留空），
   更新用 `PUT /api/catalog/entities/{id}`。**PUT 是整实体替换**：先 GET 完整实体，只改需要改的字段，
   其余字段原样带回。
-- **发布靠 PUT 写 `status: "published"`**（要求至少一条翻译，否则 `translation_required`）。
-  `POST /api/catalog/entities/{id}/lifecycle`（管理员）**只做合并与停用**，body 是
-  `{target_id?, expected_version, edit_note, sources}`：`target_id` 留空即停用、有值即合并
-  （目标须同 kind、同归属且已发布，否则 `invalid_merge_target`），**没有 `action` 字段**——
-  带 `{"action":"publish"}` 会 `400 invalid_payload`。
-- **退回走下架端点**：`POST /api/catalog/entities/{id}/unpublish`（权限 `catalog.lifecycle.manage`，与合并/停用同一档），
-  body 是 `{expected_version, edit_note, sources}`——**没有 `target_id`**（带上会 `400 invalid_payload`）。
-  它是状态机里**唯一**的降级通道，只接受 `published`：已发布条目退回 `draft`（回到草稿可继续编辑，修订历史留痕，
-  同事务写一条 `entity.unpublished` 事件）；`draft` / `pending_review` 没有可下架的内容，`deleted` / `merged` 是终态，
-  四种状态一律 `400 invalid_status`。版本不符 `409 version_conflict`，缺证据 `evidence_required`。
-  普通 PUT 提交降级仍返回 `use_lifecycle_endpoint`；退回须使用下架端点。
-- 每次编目变更都准备具体的 `edit_note` 和至少一个 `sources` 项
-  （`kind` 为 `url` / `publication` / `self`，`citation` 必填，带 `url` 时必须是合法 HTTP(S)）。
-  **服务端强制校验**：实体与关系写入缺证据一律返回 `evidence_required`，没有例外可赌。
-  证据字段只认 `sources` 对象数组（`source_urls` 字符串数组会被严格解析拒收）。
-- 创建实体与创建关系支持 `Idempotency-Key` 头。幂等键 = 路由 + 用户 + 键值，**不做载荷哈希**：
-  同键第二次调用被当成重放，直接返回**首条**结果（即使换了载荷也一样）。所以键必须唯一标识"这一次创建"
-  （含两端、父级作用域、版次等区分维度），重试要复用同一载荷。更新与删除靠 `expected_version`，
-  409 `version_conflict` 时回读再重放。
+- **发布通过 PUT 写 `status: "published"`；`lifecycle` 只用于管理员合并与停用，不可用于发布。**状态转换、请求体与错误码见 [API 行为参考](reference-api-behavior.md)。
+- **退回走下架端点**：已发布条目只能通过 `POST /api/catalog/entities/{id}/unpublish` 回到 `draft`；普通 PUT 不可降级。其他生命周期细节见 [API 行为参考](reference-api-behavior.md)。
+- 每次写入都必须提供具体 `edit_note` 与至少一条 `sources`；格式与错误码见 [API 载荷模板](reference-api-templates.md)。
+- 创建实体与关系用 `Idempotency-Key` 幂等；更新与删除用 `expected_version`。同一幂等键换载荷仍返回首条结果，键须唯一标识一次创建，重试复用原载荷；细节见 [API 行为参考](reference-api-behavior.md)。
 - 关系写入只使用 `GET /api/catalog/definitions` 中 `enabled` 的关系码与允许的两端 kind / 业务类型，
   经由 `POST /api/catalog/relations`、`PUT` / `DELETE /api/catalog/relations/{id}`。
   **删除关系必须在 body 里带 `expected_version`**，与 `edit_note` / `sources` 同体，否则 409 / 400。

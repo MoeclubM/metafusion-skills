@@ -68,9 +68,7 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Agent、Co
 
 ## 类型、字段与关系：以 curator 的三份参考为准
 
-- **每个实体都要声明 `types`**：`attributes` 的可写字段 = 该实体 `types` 的字段并集；不声明类型就只能写空
-  `attributes`，否则 `unknown_field`。10 个 work 类型码、4 个 agent 类型码与逐 kind 字段表见
-  [类型码、字段白名单与结构化字段](../metafusion-curator/reference-types-and-fields.md)。
+- 每个实体都要声明 `types`；它决定 `attributes` 的可写字段。各 kind 字段白名单见[类型码、字段白名单与结构化字段](../metafusion-curator/reference-types-and-fields.md)。
 - **种子关系码为 29 条**，方向与端点见 [关系码、方向与属性](../metafusion-curator/reference-relations.md)；实例可由管理员在定义编辑器中增改并发布，以已发布定义为准。
   重点记三条：`pressing_of` 是 release→release 的"再版"（不是收录）；`bonus_included_in` 是
   expression→release|medium 的"特典收录于"；`store_bonus_for` 的 target 是**店铺主体 agent**，不是发行版本。
