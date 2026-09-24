@@ -2,7 +2,7 @@
 
 关系只从目标实例的 `GET /api/catalog/definitions` 取，只使用其中 `enabled` 的码；
 关系码清单只从 `document.relations` 取。管理员可通过目录定义 GUI 新增、停用或修改关系后发布；
-下表只是种子定义（`base_version=7`）的 29 条快照，
+下表只是种子定义的 29 条对照快照，不记录或假设某个运行态 `base_version`；
 方向一律写作 `source → target`：载荷里的 `source_id` 在左、`target_id` 在右。
 方向写反不会报错，但会把事实写成另一个意思——这是关系数据最常见的错误来源。
 
@@ -112,14 +112,15 @@
       },
       "expected_version": 0,
       "edit_note": "官方片尾字幕",
-      "sources": [{"kind": "url", "citation": "官方片尾字幕", "url": "https://example.org/credits"}]
+      "sources": [{"kind": "url", "citation": "官方片尾字幕：支持 voiced_by、source_id、target_id、character、language", "url": "https://example.org/credits"}]
     }
 
-- 新建：`POST /api/catalog/relations`，`expected_version` 为 0，支持 `Idempotency-Key`；
-  更新：`PUT /api/catalog/relations/{id}`。
+- 新建：`POST /api/catalog/relations`，`expected_version` 为 0；`Idempotency-Key` 持久 24h，同键同载荷重放、异载荷 `409 idempotency_conflict`。
+  更新：`PUT /api/catalog/relations/{id}`，必须先从实体 relations 回读完整关系与版本。关系成功响应后也要回读关系集合。
 - 删除：`DELETE /api/catalog/relations/{id}` **必须带 body**：`{"expected_version": <回读到的 version>, "edit_note": …, "sources": […]}`。
   不带版本 → `409 version_conflict`；完全不带 body → `400 invalid_payload`。删除同样要证据。
 - 关系的版本号从 `GET /api/catalog/entities/{id}/relations` 的返回项里取（该响应含 `subject_id` 与对端 `entities`，单条关系的 GET 只有这一个来源）。
+- 关系只是一条修订证据载荷，不自动获得 CORE-P1 资格；普通辅助关系可用 P2，但用于作者、改编、系列归属或唯一身份锚点时，边和两端都须 P1。
 - 被引用实体必须存在、kind 相符、对当前用户可见且未 `deleted` / `merged`，否则 `invalid_reference`；
   `?q=` 能搜到 draft，但 draft 不能作为公开条目的引用目标。
 

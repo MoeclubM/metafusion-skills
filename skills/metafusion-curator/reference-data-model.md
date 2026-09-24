@@ -105,3 +105,14 @@
 - 每个发行的 `subjects` 覆盖了它实际收录表达的全部 Work（否则会出现 `undeclared_release_subject`）；
 - 多作品盒装没有被错误地挂到单一作品，也没有伪造 `work_id`；
 - 封面与文件资产没有被当成创作内容，哈希/对象键/下载地址没有写进题名或动态字段。
+
+## 批次容量与可计口径
+
+规划实体数量时同时报告四个互不替代的指标：
+
+- `N_total`：通过当前版本 P1、封面权利、实体边界与 canonical 去重的可计实体总数；
+- `N_work`：其中独立创作母体数；
+- `N_release_chain`：具有可核实发行链的 Work / Release / Medium / Track 组合数；
+- `N_support`：为这些内容服务的 Agent、Collection、Expression、ContentUnit 等支持实体数。
+
+`N_total` 不能用“现有八类比例 × 目标数”机械放大：Agent/Collection 或空壳层级增长不等于新增完整作品。批次目标应先确定 Work 与发行链容量，再根据真实引用补支持实体；所有计数都按 canonical id 去重，并逐实体输出 `count_eligible` 与缺口。来源、封面和当前版本门槛见[字段级来源策略](reference-source-policy.md)。

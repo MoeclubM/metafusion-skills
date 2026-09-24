@@ -47,9 +47,11 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
 
 ### 1. 考据与查重
 
-- 先收集与字段直接相关的权威来源；优先原始出版方/发行方/制作方/权利方及官方资料，其次是国家图书馆、ISBN 注册来源、MusicBrainz 等可核验数据库；Bangumi、TMDB 等可用于交叉核对。二手来源不得覆盖与其冲突的一手来源。
-- 逐条打开并核对来源实际支持的字段与结论，记录具体页面、citation 和可复核 URL；URL 可访问、搜索摘要或另一条记录的转述，都不等于事实已核实。来源相互冲突、不可访问、只有间接证据或事实未知时，明确标记“未核实/需补证据”，字段留空；不得猜测、从相邻实体推断或编造事实。
-- 封面优先使用原始出版方或权利方提供的高清原图；核实图源与发布/再利用许可或明确授权依据。官方来源只能证明图像来源，不自动授予使用权；权利不明时不使用。保持原图比例与完整性，不拉伸、不裁切伪装，不用水印图、占位图或未授权转载图。`pictures[].source` / `sources` 只保存 URL / citation 等来源记录，接口没有独立许可字段；不要把普通来源链接当成授权凭证，授权依据可在审查报告中记录。
+- **核心字段只用 CORE-P1**：权利方、出版/发行/制作方、作者/艺人官方页、官方目录/产品页/新闻稿/press kit/字幕署名、官方 ISBN/ISRC/GS1 注册记录，或明确提供该具体版次数据的官方/授权销售渠道。基础题名、正式版名、实体作用域、发行归属、核心简介、品番/ISBN/条码、用于去重的 external ID 与官方编号都属于核心；完整矩阵见[字段级来源、当前版本与封面权利策略](reference-source-policy.md)。
+- **P2/Wiki 只作辅助与发现**：MusicBrainz、Wikidata、Discogs、VGMdb、Bangumi、AniList、MAL、IMDb、TMDB、百科/社区站和 Wiki 可发现候选、交叉核对或记录辅助事实，但不得单独满足核心字段、实体边界、合并或计数门槛。日期、时长、语言、标签、格式及一般关系通常为辅助；一旦用于区分、合并、去重或身份/归属，关系边及两端立即升级为 P1。
+- 逐条打开来源，核对它实际支持的字段、作用域和具体版次；`citation` 明确列出所支持字段。URL 可访问、搜索摘要、站内旧值、模型记忆、另一条记录的转述或 `self` 都不是核心证据。来源冲突或无法核实时留空并标记“需补证据”，不得猜测或从相邻实体补造。
+- 审计只认 `revision.version == entity.version` 的当前修订，逐核心字段映射 P1；历史来源不补当前资格。服务端接受 `sources` 只证明 API 形状合格，不证明权威性或字段级 provenance。
+- 封面是独立硬门：同时核验官方/权利方图像来源，以及覆盖本服务展示、复制或热链的明确许可/授权，并另存权利证据包。官方 URL、`pictures[].source` 或普通 `sources` 都不自动授权；权利不明时留空、不使用、不计数。保持原图比例，不拉伸、不裁切伪装，不用水印、占位或未授权转载图。
 - 使用搜索和实体详情按原题名、原文题名、别名、条码、品番和外部 ID 查重
   （`GET /api/catalog/entities?q=…`）。
 - 查重维度必须包含 **kind + 题名 + `types` + 父级作用域**：同名、同 kind 但类型码不同的实体是两回事
@@ -111,8 +113,8 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
   其余字段原样带回。
 - **发布通过 PUT 写 `status: "published"`；`lifecycle` 只用于管理员合并与停用，不可用于发布。**状态转换、请求体与错误码见 [API 行为参考](reference-api-behavior.md)。
 - **退回走下架端点**：已发布条目只能通过 `POST /api/catalog/entities/{id}/unpublish` 回到 `draft`；普通 PUT 不可降级。其他生命周期细节见 [API 行为参考](reference-api-behavior.md)。
-- 每次写入都必须提供具体 `edit_note` 与至少一条 `sources`；格式与错误码见 [API 载荷模板](reference-api-templates.md)。
-- 创建实体与关系用 `Idempotency-Key` 幂等；更新与删除用 `expected_version`。同一幂等键换载荷仍返回首条结果，键须唯一标识一次创建，重试复用原载荷；细节见 [API 行为参考](reference-api-behavior.md)。
+- 每次写入都必须提供具体 `edit_note` 与至少一条 `sources`；来源只属于修订信封，不能据此宣称字段级证据合格。格式与错误码见 [API 载荷模板](reference-api-templates.md)。
+- 创建实体与创建关系用 `Idempotency-Key`：持久 24h，同操作/用户/键且载荷相同才重放首次结果；同键异载荷返回 `409 idempotency_conflict`。更新与删除用 `expected_version`；409 后必须回读、比对并由调用方决定是否重做，禁止盲重放。细节见 [API 行为参考](reference-api-behavior.md)。
 - 关系写入只使用 `GET /api/catalog/definitions` 中 `enabled` 的关系码与允许的两端 kind / 业务类型，
   经由 `POST /api/catalog/relations`、`PUT` / `DELETE /api/catalog/relations/{id}`。
   **删除关系必须在 body 里带 `expected_version`**，与 `edit_note` / `sources` 同体，否则 409 / 400。
@@ -128,7 +130,7 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 - 每个发行的 `subjects` 覆盖了实际收录表达的全部 Work；
 - 翻译能按请求语言 → en-US → original_language → 基础字段回退；
 - 封面 URL、图片比例和来源符合实例规则；
-- 服务器实际返回的 revision / 审计记录与报告一致，未请求修改的数据没有丢失。
+- 服务器实际返回的当前 revision、来源与报告一致；`revision.version == entity.version`，未请求修改的数据没有丢失。
 
 关系审查要检查自环、启用状态、端点类型、反向边语义和层级边的长路径。请求成功不等于全库 DAG 已证明；
 请把结论限定在已复核的局部，并把并发限制或遍历截断作为实现风险报告，而不是默认为安全。
@@ -152,7 +154,7 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 - 封面走 `pictures: [{url, caption:{locale:说明}, source:{kind,citation,url?}}]`；
   `url` 必须是绝对 HTTP(S) 地址。不要在实体顶层写 `cover_aspect` / `cover_image_url`——它们不在写入 DTO 里，
   严格解析会直接 400。画幅比例若实例定义声明了对应字段，放在 `attributes` 下。
-- 封面仍应来自可核实的官方或授权来源，保留自然比例，避免拉伸、占位和水印。
+- 封面只有在官方/权利方图源与明确复用许可/授权两项均通过时才可使用并计数；证据包字段与 `rights_review` 见[字段级来源、当前版本与封面权利策略](reference-source-policy.md)。
 
 ## 审查结论格式
 
@@ -162,6 +164,7 @@ Release 命名要能区分真实版本，优先使用来源中的官方版名，
 ## 进一步参考
 
 - [API 行为参考](reference-api-behavior.md)：统一 `/api` 前缀、八类实体边界、翻译形状、写入校验与端点差异。
+- [字段级来源、当前版本与封面权利策略](reference-source-policy.md)：CORE-P1 / AUX-P2 / Wiki 边界、当前修订审计和封面授权证据包。
 - [API 错误码与修复动作](reference-api-errors.md)：常见拒绝码的含义与改法（证据 / 字段 / 词表 / 结构归属 / 关系 / 并发 / 权限）。
 - [接口归属与写入范围](reference-endpoint-scope.md)：哪些前缀属于编目、哪些不属于，以及"实体是否存在/可见"该问谁。
 - [文件上传与绑定](reference-file-upload.md)：内容寻址与秒传、预签名直传、`binding_role`、读取可见性口径。

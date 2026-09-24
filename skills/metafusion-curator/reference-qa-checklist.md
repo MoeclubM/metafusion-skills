@@ -49,16 +49,18 @@
 - [ ] 回退顺序为请求 locale → `en-US` → `original_language` → 基础 `title`，展示值没有回写基础题名。
 - [ ] 发布的实体至少有一条翻译（否则服务端返回 `translation_required`）。
 - [ ] 标签、角色、关系类型、载体格式等代码来自 definitions / 词表，没有硬编码术语。
-- [ ] `pictures[].url` 是绝对 HTTP(S) 地址（相对路径会被判 `invalid_picture`），`source` 指向并说明具体图源；封面优先使用权利方/出版发行方提供的高清原图，已核对并记录许可或明确授权依据（官方来源本身不等于再利用许可）。权利不明时不使用、留空并报告；无占位图、拉伸、裁切伪装或水印。
+- [ ] `pictures[].url` 是绝对 HTTP(S) 地址（相对路径会被判 `invalid_picture`），`source` 指向并说明具体图源；另有权利 sidecar 证据包，明确授权方、被授权方、用途、地域、期限、展示/复制/热链范围及证据，`rights_review=passed`。官方来源、`pictures[].source` 或普通 `sources` 本身不构成授权；缺许可时留空、报告并禁止计数。无占位图、拉伸、裁切伪装或水印。
 - [ ] 画幅比例若写入，位于实例定义声明的字段下；没有提交顶层 `cover_aspect`。
 - [ ] 动过定义/货架/外部库名称的：`names` 四语齐备（`zh-CN` / `zh-TW` / `en-US` + `ja` 或 `ja-JP`），否则 `four_locale_names_required`（这是 `names`，与实体 `translations` 两套形状）。
 
-## 证据、并发与写后验证
+## 证据、当前版本、并发与写后验证
 
-- [ ] 每次变更都有具体 `edit_note` 和至少一个 `sources` 项（`kind` 为 `url` / `publication` / `self`）。
-- [ ] 更新前已 GET 完整实体并带回未修改字段（PUT 是整实体替换，不是局部 PATCH）。
-- [ ] 更新带了正确的 `expected_version`；409 `version_conflict` 时已回读再重放。
-- [ ] 已重新读取实体、`relations`、`occurrences` 与 `revisions`。
-- [ ] 已核对 revisions 行的 `snapshot`（写后快照）与当前实体、编辑者与来源，确认未请求修改的数据没有丢失（注意：`revisions` **没有 before/after 字段**，只能拿快照比对）。
-- [ ] 没有声称这些接口提供全量事务或全库 DAG 证明——结论限定在本次写入与已复核的局部。
-- [ ] 报告将结果归类为通过、需补证据、需修正或实现缺口，并列出实体和字段。
+- [ ] 已按[字段级来源策略](reference-source-policy.md)把核心字段映射到 CORE-P1；P2/Wiki 只作辅助或发现，没有用来满足核心、合并或计数门槛。
+- [ ] 每次变更都有具体 `edit_note` 和至少一个 `sources` 项，`citation` 明确列出所支持字段；`self` 只可描述没有新增外部断言的维护/清理说明，不能支撑任何字段值。
+- [ ] 当前实体与 `revisions` 已回读，资格只取 `revision.version == entity.version`；历史修订、已失效来源、站内旧值和搜索摘要没有补当前核心证据。
+- [ ] 更新前已 GET 完整实体并带回所有未修改的可写字段（PUT 是整实体替换，不是局部 PATCH）；写后再次 GET 完整实体逐字段比对，而非只信 200 响应。
+- [ ] 更新带了正确的 `expected_version`；409 `version_conflict` 时先回读、确认并发修改内容，再决定是否基于新版本重做，禁止自动/盲重放。
+- [ ] 创建的 `Idempotency-Key` 绑定唯一操作与原载荷；同键同载荷才重放，`409 idempotency_conflict` 未被误当成重放成功。
+- [ ] 已重新读取实体、`relations`、`occurrences` 与 `revisions`，并核对当前修订 `snapshot`、编辑者、定义版本与来源，确认未请求修改的数据没有丢失（`revisions` 没有 before/after）。
+- [ ] 没有声称这些接口提供跨实体全量 ACID、字段级 provenance、封面许可字段或全库 DAG 证明；结论限定在本次写入与已复核局部。
+- [ ] 报告将结果归类为通过、需补证据、需修正或实现缺口，并列出实体、字段、当前版本、来源等级与 `count_eligible`。

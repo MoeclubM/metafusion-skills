@@ -62,3 +62,15 @@
 
 `GET /api/storage/entities/{id}/files` 的 `id` 是目录实体 ID；存储不保存目录结构。
 目标实例若对某端点返回 404，核对其实际接口后再继续依赖该端点的写入。
+
+## 封面是跨服务、跨证据链的受控流程
+
+目录 `pictures` 与存储资产/绑定是两套状态，没有自动同步或跨服务事务；技术上传成功也不代表版权通过。封面只有在以下顺序全部核对后才可提交并计数：
+
+1. 先按[字段级来源策略](reference-source-policy.md)确认图像身份、官方/权利方图源及覆盖本服务展示、复制或热链的许可/授权；缺项保持 `rights_review=blocked`。
+2. 获权后才上传或直传，回读资产 `sha256`、MIME、`complete`、`hash_verified`、`blocked` 等状态；禁止缩略图放大、截图、拼贴、拉伸、占位或水印图。
+3. 用 `binding_role=cover_image` 绑定目录实体，GET `/api/storage/entities/{id}/files` 核对 asset_id 与角色完全一致。
+4. 再用完整实体 PUT 写 `pictures[]`，保留其它字段并带 `expected_version`；响应后回读实体、当前 revisions 和存储绑定。
+5. 任一步失败都停止并记录补偿清单；不得只看到目录 URL 或存储 200 就计为合规封面。
+
+线上 `Picture` DTO 没有 `asset_id` 或许可字段，授权范围/期限/合同引用须保存在 Catalog DTO 之外的审查证据包。

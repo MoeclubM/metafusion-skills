@@ -24,6 +24,7 @@
 - 发布是 PUT 写 `status: "published"`；lifecycle 只做合并与停用（body 无 `action`），**退回走专属下架端点** `POST /api/catalog/entities/{id}/unpublish`（权限 `catalog.lifecycle.manage`，`published → draft`，体 `{expected_version, edit_note, sources}`）；关系码共 29 条，方向与属性以 `reference-relations.md` 为准。
 - 哪些前缀属于编目、哪些不属于：见 [接口归属与写入范围](skills/metafusion-curator/reference-endpoint-scope.md)。
 - 文件怎么传、怎么挂到实体上：见 [文件上传与绑定](skills/metafusion-curator/reference-file-upload.md)。
+- 核心/辅助来源、当前修订与封面授权：见[字段级来源、当前版本与封面权利策略](skills/metafusion-curator/reference-source-policy.md)。
 - 写库被拒怎么办：见 [API 错误码与修复动作](skills/metafusion-curator/reference-api-errors.md)。
 
 ## 安装方式
@@ -45,6 +46,6 @@ cp -r metafusion-skills/skills/lrm-catalog-standards  <your-repo>/.cursor/skills
 
 技能内容以**目标实例的实际响应**为准校准：接口行为、枚举与字段码都会随实例配置演进，
 动手前先读 `GET /api/openapi.json` 与 `GET /api/catalog/definitions`。
-编目事实优先核对出版/发行/制作/权利方等一手来源；逐条写清引文所支持的字段，
-未知、冲突或未核实内容必须留空并标注，不猜测或编造。封面优先权利方提供的高清原图，并核实许可/授权；
-来源链接不自动授予图片使用权，权利不明时不使用。
+编目采用字段级证据矩阵：核心字段只用权利方、出版/发行/制作方、作者/艺人官方页、官方目录/注册记录或明确提供该具体版次数据的官方/授权渠道；MusicBrainz、Wikidata、Discogs、Bangumi、TMDB、IMDb、百科/社区站与 Wiki 只作发现、交叉核对或辅助事实，不能单独满足核心、合并或计数门槛。
+逐条打开来源并写清 citation 支持的字段；当前资格只认 `revision.version == entity.version` 的当前修订，历史来源、`self`、站内旧值、搜索摘要与模型记忆不能补核心证据。
+封面是独立硬门：官方/权利方图源与覆盖本服务展示、复制或热链的明确许可/授权必须同时通过并留有 sidecar 证据包；来源链接不自动授予使用权，权利不明时不使用、不计数。完整规则见[字段级来源、当前版本与封面权利策略](skills/metafusion-curator/reference-source-policy.md)。

@@ -7,7 +7,10 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Agent、Co
 
 本技能专注于"创作母体是什么"和"某个发行版如何承载它"的边界。
 全站编目流程、审查结论格式和当前 API 差异见 [metafusion-curator](../metafusion-curator/SKILL.md)；
-使用前先读其 [API 行为参考](../metafusion-curator/reference-api-behavior.md)。
+使用前先读其 [API 行为参考](../metafusion-curator/reference-api-behavior.md)和
+[字段级来源、当前版本与封面权利策略](../metafusion-curator/reference-source-policy.md)。
+
+实体边界、正式题名、类型与作用域、发行归属、官方编号、ISBN/条码及用于去重的外部 ID 都属于核心事实，必须有逐字段 CORE-P1 证据；P2/Wiki 只能发现候选或记录辅助事实，不能据此新建、合并或计入完整。
 
 ## 固定实体骨架
 
@@ -28,11 +31,10 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Agent、Co
 
 ## 命名和归属规则
 
-1. Work 只写创作主名。TV、OVA、剧场版、Season、Vol、S1、4K、1080p、FLAC、OST、初回限定、BOX、
-   出版社和品番等版本或包装信息，放到 Release / Medium / Track 或关系中。注意 `attributes.tags` **只有 work 能写**：
-   不要把"初回盘""活动限定"这类标签往 Release / Medium / Track 上塞——那里没有 tags 字段（`unknown_field`），
-   改用 `edition_type` / `edition_batch` / `attachments` / `store_bonuses`，写不下的按实现缺口上报。
-   若来源确实是独立创作实体，先判断实体边界再新建 Work。
+1. Work 只写创作主名。只有官方作品/产品/发行资料证明某个 TV、OVA、剧场版、Season、Vol、S1、4K、1080p、FLAC、OST、初回限定、BOX
+   是独立创作实体时，才先按来源判断边界再新建 Work；不得从正式题名机械删词或按 Wiki/聚合站拆建。版本、出版社和品番等放入有 P1 证据的 Release / Medium / Track 或关系中。
+   注意 `attributes.tags` **只有 work 能写**：不要把"初回盘""活动限定"这类标签往 Release / Medium / Track 上塞——那里没有 tags 字段（`unknown_field`），
+   改用实例 definitions 声明的 `edition_type` / `edition_batch` / `attachments` / `store_bonuses`，写不下的按实现缺口上报。
 2. ContentUnit 表达的是**目录**（第几话、第几章、第几卷的篇目），不带专辑名、盘号和发行品番；
    父子关系只能在同一 Work 内。
 3. Expression 是可被多个发行复用的那一层（录音母版、正片、正文、译本）。
@@ -83,6 +85,7 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Agent、Co
 - [API 行为参考](../metafusion-curator/reference-api-behavior.md)
 - [接口归属与写入范围](../metafusion-curator/reference-endpoint-scope.md)
 - [文件上传与绑定](../metafusion-curator/reference-file-upload.md)
+- [字段级来源、当前版本与封面权利策略](../metafusion-curator/reference-source-policy.md)
 - [实体与层级数据模型](../metafusion-curator/reference-data-model.md)
 - [类型码、字段白名单与结构化字段](../metafusion-curator/reference-types-and-fields.md)
 - [关系码、方向与属性](../metafusion-curator/reference-relations.md)

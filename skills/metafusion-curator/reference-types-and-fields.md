@@ -1,8 +1,8 @@
 # 类型码、字段白名单与结构化字段（面向 Agent）
 
 本文件回答写库前必须先回答的问题：**这个实体能写哪些属性键？**
-答案不是"字段名看着对就行"，而是由实体声明的 `types` 推导。下表是种子定义（`base_version=7`）
-的实测快照；目标实例的已发布 definitions 可能已被管理员扩展或调整，动手前一律以
+答案不是"字段名看着对就行"，而是由实体声明的 `types` 推导。下表只是种子定义的对照快照，不记录或假设某个运行态 `base_version`；
+目标实例的已发布 definitions 可能已被管理员扩展或调整，动手前一律以
 `GET /api/catalog/definitions` 的实际返回为准（读取形状见 [API 行为参考](reference-api-behavior.md)）。
 
 ## 唯一硬规则：`attributes` 白名单 = 声明的 `types` 的字段并集

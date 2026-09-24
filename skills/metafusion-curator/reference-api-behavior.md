@@ -62,7 +62,7 @@
 
       GET /api/catalog/definitions
       {
-        "base_version": 7, "state": "published", "created_at": "…", "id": "…",
+        "base_version": <运行时版本>, "state": "published", "created_at": "…", "id": "…",
         "kinds": {"work": {"names": {"zh-CN": "作品", "en-US": "Works", …}}, …},
         "document": {
           "types":        {"album": {"names": {…}, "kinds": ["work"], "fields": ["duration", "duration_source", …]}, …},
@@ -95,7 +95,9 @@
   写任何键都是 `unknown_field`。缺落点的事实按 [模型缺口与上报路径](reference-model-gaps.md) 上报，
   不要塞进 `locator` 或 `attachments` 凑形状。
 - 旧的顶层 `cover_aspect` / `cover_image_url` 字段**不在写入 DTO 里**：实体封面统一走
-  `pictures: [{url, caption:{locale:说明}, source:{kind,citation,url?}}]`；
+  `pictures: [{url, caption:{locale:说明}, taken_at?, source:{kind,citation,url?}}]`；URL 必须是绝对 HTTP(S)。
+  DTO 没有 `asset_id`、许可类型、授权范围或期限，`Picture.source` 与实体修订 `sources` 都不是权利记录；
+  官方图源不自动授权复用，封面计数须另有权利 sidecar，规则见[字段级来源策略](reference-source-policy.md)。
   画幅比例若实例定义声明了对应字段码，它在 `attributes` 下，以 `GET /api/catalog/definitions` 为准。
 
 ## 读取接口
@@ -120,32 +122,39 @@
 | GET | `/api/admin/catalog-definitions` | 定义版本列表（需 `catalog.definitions.manage`；目录服务提供，不属账号） |
 | POST | `/api/importer/preview`、`/api/importer/import` | Bangumi 预览 / 按证据导入（**注意前缀是 `/api/importer/*`，不是 `/api/catalog/importer/*`**） |
 
+### 可见性与权限探测
+
+- OpenAPI、definitions、公开 entities、external-databases 可匿名 GET；`home-preferences`、`entities/stats`、developer request-logs、admin definitions / external-databases 等调用者或管理读取需要认证。匿名返回 401；有令牌但 scopes/账号现时权限不足返回 403。
+- 草稿与非公开实体按调用者身份过滤；某次目标快照若 draft 总数为 0，只能说明“无样本可比较”，不能据此取消过滤规则。
+- 有效 PAT 的一次 200 管理读取只证明该具体权限交集，不证明实体创建、PUT 或关系写权限；禁止用写请求探测的任务必须把写权限标为“未核验”，不能声称全端点统一强制或统一允许。
+
 `field=` 检索只支持**顶层可检索字段**（`document.fields[码].searchable = true`，如 `tags`、`duration`、
 `edition_date`、`barcode`）。点号路径在种子定义下**不可用**：`locator.path` → `400 field_not_searchable`，
 `inclusion_attributes.translator` / `subject_attributes.seq` / `attributes.tags` → `400 unknown_field`。
 只有叶字段声明 `searchable` 且整条链路启用时才可用，不确定就先读 definitions。
-`limit` 静默收敛：`limit <= 0` 或 `> 500` 一律当成 200，**不报错**。
+实体列表分页是严格边界：`limit` 默认 50、只接受 1–100；`offset` 必须是 ≥0 的整数，`page` 必须是 ≥1 的整数，且 `page` 与 `offset` 互斥。非法值分别返回 `invalid_limit` / `invalid_offset` / `invalid_page`，同时传 `page` 与 `offset` 返回 `pagination_conflict`；不会静默收敛。客户端分页 helper 必须在发请求前做同样校验。
 
-### 限流（配额按 IP + 路由共享）
+### 限流（每进程按 IP + 完整路由计数）
 
 | 路由 | 上限 | 备注 |
 | --- | --- | --- |
-| `GET /api/catalog/entities` | 120/min | 实测首个 429 有落在第 101 / 第 59 次的记录，说明会与同 IP 的其它客户端共享配额 |
+| `GET /api/catalog/entities` | 120/min/实例 | 固定窗按客户端 IP + 完整路由计数；同进程会共享，多副本部署下不是全局精确额度 |
 | `POST /api/catalog/expressions/details` | 120/min | |
 | `GET /api/catalog/tags` | 120/min | |
 | `GET /api/catalog/shelves/feed` | 60/min | |
 | `GET /api/catalog/compare` | 10/min | |
 | `POST /api/importer/preview` | 10/min | |
 
-超限返回 `429 {"error":"rate_limited"}` 并带 `Retry-After`（单机固定窗口，实测 25–57 秒）。
-**必须按 `Retry-After` 退避**：并发编目会被同 IP 的其它客户端提前耗尽配额，不要立刻重放写入。
+超限返回 `429 {"error":"rate_limited"}` 并带 `Retry-After` 与 `X-RateLimit-*`。实现是进程内固定窗口；负载均衡后的总吞吐和共享程度取决于副本数，不能把 120/min 宣称为跨实例全局硬上限。
+**必须按 `Retry-After` 退避**：并发编目会与同 IP、同实例的其它客户端共享配额；读取可退避重试，写入不要自动或立刻重放。
 
 ## 写入接口的实际边界
 
 - **创建**：`POST /api/catalog/entities`，体为 `{entity, expected_version, edit_note, sources}`。
   创建时 `expected_version` 必须为 `0`，且 `entity.id` 必须为空，否则 `id_must_be_empty`。
 - **更新**：`PUT /api/catalog/entities/{id}`。**是整实体替换，不是局部 PATCH**：先 GET 完整实体，
-  改要改的字段，把无关字段（尤其是 `contents` / `subjects` / `translations` / `attributes`）原样带回。
+  改要改的字段，把无关的可写字段（尤其是 `contents` / `subjects` / `translations` / `attributes`）原样带回，并带当前 `expected_version`。
+  响应成功后再次 GET 完整实体逐字段回读，再检查 `relations`、`occurrences` 与当前 `revisions`；不能只凭 200 响应判断完成。
 - **生命周期端点只做合并与停用**：`POST /api/catalog/entities/{id}/lifecycle`（管理员，权限
   `catalog.lifecycle.manage`），body 是 `{target_id?, expected_version, edit_note, sources}`，**没有 `action` 字段**。
   `target_id` 留空即停用（`deleted`）、有值即合并（`merged`；目标须同 kind、同归属、已发布，
@@ -163,15 +172,14 @@
   载荷是 `{relation:{type,source_id,target_id,position,attributes}, expected_version, edit_note, sources}`。
   **DELETE 也必须带 body**（`expected_version` + `edit_note` + `sources`）：不带版本 → `409 version_conflict`，
   完全不带 body → `400 invalid_payload`；版本号从 `entities/{id}/relations` 的返回项里取（单条关系的 GET 只有这一个来源）。种子关系码的方向、端点与属性字段见 [关系码、方向与属性](reference-relations.md)。
-- **证据是强制的**：所有实体与关系写入都校验 `edit_note` 非空且 `sources` 至少一条，否则 `evidence_required`。
-  `sources[].kind` 只能是 `url` / `publication` / `self`，`citation` 必填；`kind=url` 或带 `url` 时必须是合法 HTTP(S)
+- **证据载荷是强制的**：所有实体与关系写入都校验 `edit_note` 非空且 `sources` 至少一条，否则 `evidence_required`。
+  `sources[].kind` 只能是 `url` / `publication` / `self`，`citation` 必填并应列明支持字段；`kind=url` 或带 `url` 时必须是合法 HTTP(S)
   （无用户信息），否则 `invalid_source`。图片 `pictures[].source` 同样校验。
-  证据字段只认 `sources` 对象数组。
-- **乐观并发**：`expected_version` 与库中版本不符返回 **409 `version_conflict`**，必须回读后重放，不要盲重试。
-- **幂等**：创建实体与创建关系支持 `Idempotency-Key` 头：同一 Key 在 24 小时内重放会返回**首次**结果，适合网络重试。
-  **键里不含载荷**：幂等缓存键 = 路由 + 用户 + 键值，**不做载荷哈希**——同键换了载荷也一样返回首条结果
-  （实测：同键不同载荷 → 200 返回第一个实体）。所以键必须唯一标识"这一次创建"（含两端、父级作用域、版次等
-  区分维度），重试必须复用同一载荷，否则会静默丢边或把两个版次并成一个。更新与删除靠 `expected_version`。
+  Entity 顶层没有 `sources`；它属于 revisions，且是修订级而非字段级 provenance。服务端接受只证明形状，不证明 CORE-P1；
+  `self` 不能支撑任何字段值。完整门槛见[字段级来源策略](reference-source-policy.md)。
+- **乐观并发**：`expected_version` 与库中版本不符返回 **409 `version_conflict`**。必须回读完整实体、确认并发修改内容，再决定是否基于新版本重做；客户端不得自动重放 `mutate`。
+- **创建幂等**：创建实体与创建关系支持 `Idempotency-Key`，记录持久 24h，并按 operation + user + request key 隔离。相同键、相同载荷摘要会重放首次响应；**同键异载荷返回 409 `idempotency_conflict`**，不会静默返回旧结果。键必须唯一标识一次创建，重试复用完全相同载荷。更新、关系 PUT 与删除不靠创建幂等，只用 `expected_version`。
+- 线上 OpenAPI 的反射 schema 可能没有列出非空 `required`，也未把 `Idempotency-Key` 声明为 parameter；不能据“OpenAPI 未写”推断请求可省略或不支持，必须结合目标处理器与实际响应。
 - **状态与权限**：状态为 `draft` / `pending_review` / `published`（`deleted` / `merged` 只能经 lifecycle 端点，
   `published → draft` 只能经 unpublish 端点）。
   普通角色只能写 `draft` / `pending_review` 且不可触碰已发布条目；`editor` 可维护已发布条目；
@@ -184,8 +192,9 @@
 
 断言"响应里有/没有某字段"之前先看清形状（实测）：
 
-- `revisions` 行只有**写后快照**：`{id, version, actor_id, actor_name, actor_role, created_at, edit_note, sources, snapshot}`——
-  **没有 `before` / `after`**。核对改动要拿 `snapshot` 与当前实体比对，不要去找前后差异字段。
+- `revisions` 行只有**写后快照**：`{id, version, actor_id, actor_name, actor_role, created_at, definition_version, edit_note, sources, snapshot}`——
+  **没有 `before` / `after`**。当前证据只认 `revision.version == entity.version`；`sources` 是修订级而非字段级 provenance。
+  核对改动要拿 `snapshot` 与当前实体比对，不要去找前后差异字段。
 - `GET /api/catalog/entities/{id}/relations` 返回 `{items, entities, subject_id}`：`entities` 是对端实体，
   `subject_id` 是被查实体；关系版本号从这里取。
 - 实体 DTO 另含只读 `updated_at`；`pictures[]` 元素可带可选 `taken_at`。
@@ -198,8 +207,8 @@
 
 ## 不要过度声称
 
-- **不要**声称这些接口提供跨实体全量 ACID 事务、完整审计或全库 DAG 证明：
-  单次写入是**单实体（或单关系）事务**，修订快照按实体记录。
+- **不要**声称这些接口提供跨实体全量 ACID 事务、字段级来源、封面许可字段、完整审计或全库 DAG 证明：
+  单次写入是**单实体（或单关系）事务**，修订快照按实体记录；来源只属于修订。
 - **不要**用近似数据填补模型缺口，也不要为了绕过校验去改数据库、改触发器或伪造 `work_id`。
 - 目标实例的已发布 definitions 与本文的种子默认值可能不同（定义由管理员演进）；
   以 `GET /api/catalog/definitions` 为准，并在报告中列出差异。

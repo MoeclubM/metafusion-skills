@@ -164,8 +164,16 @@ export async function getDefinitions() {
   return definitions?.document || definitions;
 }
 
+export function normalizePageLimit(limit = 100) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error("实体列表 limit 必须是 1–100 的整数");
+  }
+  return limit;
+}
+
 export async function listAll(pathname, params = {}, limit = 100) {
   if (!pathname.startsWith(API_PREFIX)) throw new Error(`请求路径必须以 ${API_PREFIX} 开头`);
+  limit = normalizePageLimit(limit);
   const items = [];
   const seenFirstIds = new Set();
   let offset = 0;
@@ -177,7 +185,10 @@ export async function listAll(pathname, params = {}, limit = 100) {
     url.searchParams.set("offset", String(offset));
 
     const result = await request(`${url.pathname}${url.search}`);
-    if (result.status !== 200 || !result.body) break;
+    if (result.status !== 200 || !result.body) {
+      const code = result.body?.error || result.body?.code || result.status;
+      throw new Error(`分页读取失败：HTTP ${result.status} ${code}`);
+    }
     const page = result.body.items || [];
     const firstId = page[0]?.id;
     if (firstId && seenFirstIds.has(firstId)) break;
@@ -239,9 +250,28 @@ export async function putEntity(id, mutate, {
       sources,
     },
   });
+  const ok = result.status >= 200 && result.status < 300;
+  if (!ok) {
+    return {
+      ok: false,
+      status: result.status,
+      body: result.body,
+      readbackStatus: null,
+      readback: null,
+      readbackOK: false,
+    };
+  }
+
+  // PUT 成功只说明写入已提交；必须读回完整实体，避免把 200 当作未请求字段未丢失的证明。
+  const readback = await getEntity(id);
+  const readbackOK = readback.status >= 200 && readback.status < 300
+    && readback.body?.version === result.body?.version;
   return {
-    ok: result.status >= 200 && result.status < 300,
+    ok: true,
     status: result.status,
     body: result.body,
+    readbackStatus: readback.status,
+    readback: readback.body,
+    readbackOK,
   };
 }

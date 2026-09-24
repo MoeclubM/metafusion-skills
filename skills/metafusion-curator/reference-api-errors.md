@@ -20,8 +20,8 @@
 
 | 错误码 | 含义 | 修复动作 |
 | --- | --- | --- |
-| `evidence_required` | 缺 `edit_note`，或 `sources` 为空 | 补一段具体修改说明 + 至少一条来源；实体、关系、lifecycle 三条路径都强制 |
-| `invalid_source` | 来源格式不对 | `sources[].kind` 只能是 `url`/`publication`/`self`；`citation` 必填；带 `url` 时必须是合法 HTTP(S) 且不含用户信息 |
+| `evidence_required` | 缺 `edit_note`，或 `sources` 为空 | 补具体修改说明 + 至少一条来源；这只是载荷门，仍须按[字段级来源策略](reference-source-policy.md)逐字段核验 P1 |
+| `invalid_source` | 来源格式不对 | `kind` 只能是 `url`/`publication`/`self`；`citation` 必填并列出支持字段；带 `url` 时必须为合法 HTTP(S) 且不含用户信息。`self` 不能支撑字段事实 |
 | `invalid_payload` | 载荷形状不对（含未知顶层字段）；消息可能指明位置（`invalid_payload: work.title`） | 严格按当前 DTO 写：发行版名用 `title`、时长用 `duration`、证据用 `sources` 对象数组；未知键一律删掉再试 |
 | `id_must_be_empty` | 创建时带了 `entity.id` | 创建一律留空 id、`expected_version` 传 0 |
 | `invalid_entity` | kind 不在八类现行值里（如 `artist` 会走到这里）；`title` 缺失/超长 | kind 只用现行八类；`title` 任何 kind 都必填（trim 非空、≤2000） |
@@ -79,7 +79,7 @@ A→B 与 B→A 同类型的两条边都合法——需要双向语义就建两�
 
 | 错误码 | 含义 | 修复动作 |
 | --- | --- | --- |
-| `version_conflict`（409） | `expected_version` 与库里不一致 | 回读实体取最新 `version` 再重放；不要盲重试。`DELETE /api/catalog/relations/{id}` 不带版本也走这里 |
+| `version_conflict`（409） | `expected_version` 与库里不一致 | 回读完整实体，确认并发改动后再决定是否基于新版本重做；客户端不得自动重放 mutate。关系删除不带版本也走这里 |
 | `use_lifecycle_endpoint` | 用 PUT 提交 `deleted`/`merged`，或把已发布条目降级（`published → draft`） | 停用/合并走 `POST /api/catalog/entities/{id}/lifecycle`（body `{target_id?, expected_version, edit_note, sources}`，没有 `action`）；退回走 `POST /api/catalog/entities/{id}/unpublish`（权限 `catalog.lifecycle.manage`，body `{expected_version, edit_note, sources}`，不能带 `target_id`） |
 | `invalid_status` | lifecycle 作用在 `deleted`/`merged` 条目上，或状态值非法；下架端点收到的实体不是 `published`（`draft`/`pending_review` 没有可下架的内容，`deleted`/`merged` 是终态） | 先 `GET` 读回 `status`：已是 `draft` 就不必下架；终止态不可再走 lifecycle，要恢复只能新建 |
 | `invalid_merge_target` | 合并目标与源不同 kind／不同归属／不同父级，或目标未发布 | 只合并同一层级、同一容器里的重复建档，目标必须 `published` |
@@ -87,12 +87,14 @@ A→B 与 B→A 同类型的两条边都合法——需要双向语义就建两�
 | `authentication_required`（401） | **写端点**没有有效令牌（会话 / OAuth 令牌缺失或验签失败） | 核对本地凭据或重新登录；读端点返回 200 不代表写权限凭据有效 |
 | `invalid_token`（401） | **PAT（`mfp_` 前缀）** 无效 / 已吊销 / 已过期 / 账号被封禁，不细分原因 | 确认凭据失效后再选择其他有效凭据；不要因任务结束自动轮换 |
 | `auth_unavailable`（503） | PAT 请求问不到账号服务：内省端点不可达 / 超时 / 该服务没配 `AUTH_URL` | 依赖故障，退避重试即可；**不要**当凭据问题去换令牌（换令牌同样 503） |
+| `idempotency_conflict`（409） | 同一创建操作、用户和 `Idempotency-Key` 被用于不同载荷摘要 | 不要把响应当重放成功；新的一次创建必须换新 key，原 key 的网络重试必须复用完全相同载荷 |
 
 ## 限流
 
 | 错误码 | 含义 | 修复动作 |
 | --- | --- | --- |
-| `rate_limited`（429） | 超过该路由配额（按 **IP + 路由**共享）：实体检索 / `expressions/details` / `tags` 120/min、货架 feed 60/min、对比与 `importer/preview` 10/min | 读 `Retry-After`（实测 25–57 秒）退避后再试；不要立刻重放写入 |
+| `rate_limited`（429） | 超过每进程 IP + 完整路由的固定窗配额：实体检索 / `expressions/details` / `tags` 120/min、货架 feed 60/min、对比与 `importer/preview` 10/min | 读 `Retry-After` 退避；读取可重试，写入不自动或立刻重放。多副本下该值不是全局精确上限 |
+| `invalid_limit` / `invalid_offset` / `invalid_page` / `pagination_conflict`（400） | 实体列表分页违反 `limit=1..100`、非负整数 offset、正整数 page，或同时传 page+offset | 修正客户端参数；服务端不会静默收敛。`page` 与 `offset` 二选一 |
 
 ## 种子定义中不可达的错误码（"没遇到"不等于漏测）
 

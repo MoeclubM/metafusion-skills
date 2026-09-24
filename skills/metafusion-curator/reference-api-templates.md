@@ -12,19 +12,19 @@
     # 它的有效权限 = 账号现时权限 ∩ 创建时选的 scopes（权限码），不够就 403，无效/吊销/过期是 401 invalid_token
     Content-Type: application/json
     Idempotency-Key: <uuid>        # 可选，仅创建实体 / 创建关系
-                                   # 幂等键 = 路由 + 用户 + 键值（不含载荷），24h 内重放返回首次结果；
-                                   # 同键换载荷也返回首条 → 键必须唯一标识"这一次创建"，重试复用同一载荷
+                                   # 持久 24h；键按操作 + 用户 + 请求键隔离，并保存载荷摘要。
+                                   # 同键同载荷重放首次结果；同键异载荷 → 409 idempotency_conflict。
 
 每次写入都要准备：
 
     "edit_note": "根据官方发行目录补充初版蓝光的品番与分集目录",
     "sources": [
-      {"kind": "url", "citation": "发行方官方目录", "url": "https://example.org/official-catalog"}
+      {"kind": "url", "citation": "发行方官方目录：支持 release.title、catalog_number、edition_date、subjects/contents", "url": "https://example.org/official-catalog"}
     ]
 
-`sources[].kind` 只能是 `url` / `publication` / `self`；`citation` 必填；带 `url` 时必须是可公开访问的 HTTP(S) 地址、
-不得含用户信息。缺 `edit_note` 或缺 `sources` 会被拒绝为 `evidence_required`——**这是服务端强制的，不是建议**。
-作者自述用 `kind: "self"`，并如实标注。
+`sources[].kind` 只能是 `url` / `publication` / `self`；`citation` 必填并应明确列出所支持字段；带 `url` 时必须是可公开访问的 HTTP(S) 地址、不得含用户信息。缺 `edit_note` 或缺 `sources` 会被拒绝为 `evidence_required`——**这是服务端强制的载荷门，不代表证据权威或字段级合格**。
+
+`self` 只能记录没有新增外部断言的维护、清理或限制说明，不能支撑题名、简介、编号、关系、身份锚点或封面权利。公开可访问的作者/机构自述应按 `url` 或 `publication` 登记，并仍按[字段级来源策略](reference-source-policy.md)判断是否满足核心门槛。服务端通过也不等于 CORE-P1 已核实。
 
 ## 写入信封
 
@@ -38,7 +38,7 @@
       "sources": [{"kind": "url", "citation": "…", "url": "https://…"}]
     }
 
-PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，其余字段原样带回。
+PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，其余可写字段原样带回；带当前 `expected_version`。响应成功后再次 GET 完整实体逐字段回读，并读取当前修订；不要只凭 200 响应判断成功。
 
 ## 各 kind 允许的结构字段
 
@@ -137,7 +137,7 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
     }
 
 - `title` 是基础题名，`original_language` 声明它属于哪个语种；原语言题名放在对应 locale 的 `translations` 行里。
-- `pictures[].url` 必须是绝对 HTTP(S) 地址：相对路径（如 `/assets/covers/x.webp`）会被拒绝为 `invalid_picture`。
+- `pictures[].url` 必须是绝对 HTTP(S) 地址：相对路径（如 `/assets/covers/x.webp`）会被拒绝为 `invalid_picture`。示例只展示 DTO；实际提交前必须另有权利 sidecar 证据包，官方图源不自动授权复用，缺明确许可时不得使用或计数。
 - **不要**提交顶层 `cover_aspect` / `cover_image_url`：它们不在写入 DTO 里，严格解析会直接 `400 invalid_payload`。
 
 ## content_unit

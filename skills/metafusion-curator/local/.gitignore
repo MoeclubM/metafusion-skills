@@ -3,3 +3,4 @@
 !.gitignore
 !README.md
 !metafusion-api.mjs
+!metafusion-api.test.mjs
