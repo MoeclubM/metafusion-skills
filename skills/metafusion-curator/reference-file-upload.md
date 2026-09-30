@@ -70,7 +70,7 @@
 1. 先按[字段级来源策略](reference-source-policy.md)确认图像身份、官方/权利方图源及覆盖本服务展示、复制或热链的许可/授权；缺项保持 `rights_review=blocked`。
 2. 获权后才上传或直传，回读资产 `sha256`、MIME、`complete`、`hash_verified`、`blocked` 等状态；禁止缩略图放大、截图、拼贴、拉伸、占位或水印图。
 3. 用 `binding_role=cover_image` 绑定目录实体，GET `/api/storage/entities/{id}/files` 核对 asset_id 与角色完全一致。
-4. 再用完整实体 PUT 写 `pictures[]`，保留其它字段并带 `expected_version`；响应后回读实体、当前 revisions 和存储绑定。
+4. 再用完整实体 PUT 写 `pictures[]`，自托管图片项同时写对应资产 UUID 到 `asset_id`，保留合法 `url`、其它图片与实体字段，并带 `expected_version`；响应后回读实体、当前 revisions 和存储绑定。
 5. 任一步失败都停止并记录补偿清单；不得只看到目录 URL 或存储 200 就计为合规封面。
 
-线上 `Picture` DTO 没有 `asset_id` 或许可字段，授权范围/期限/合同引用须保存在 Catalog DTO 之外的审查证据包。
+当前 `Picture` 包含 `url`、`caption`、`source` 和可选 `taken_at`、`version_label`、`usage_period`、`role`、`asset_id`。目录只检查 `asset_id` 的 UUID 形状，不保证资产存在、可读、已绑定或未封禁，因此仍需上述跨服务回读。`usage_period` 记录图片用于实体的事实时段，不是版权许可期限；授权范围/期限/合同引用须保存在 Catalog DTO 之外的审查证据包。

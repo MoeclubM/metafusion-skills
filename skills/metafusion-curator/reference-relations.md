@@ -1,8 +1,8 @@
 # 关系码、方向与属性（面向 Agent）
 
 关系只从目标实例的 `GET /api/catalog/definitions` 取，只使用其中 `enabled` 的码；
-关系码清单只从 `document.relations` 取。管理员可通过目录定义 GUI 新增、停用或修改关系后发布；
-下表只是种子定义的 29 条对照快照，不记录或假设某个运行态 `base_version`；
+关系码清单只从 `document.relations` 取。管理员可通过目录定义 GUI 新增、停用或修改关系并保存；
+下表只是种子定义的 29 条对照快照，不记录或假设某个实例当前的 `etag`；该标记仅防止保存覆盖，不代表可读取的历史版本。
 方向一律写作 `source → target`：载荷里的 `source_id` 在左、`target_id` 在右。
 方向写反不会报错，但会把事实写成另一个意思——这是关系数据最常见的错误来源。
 
@@ -44,7 +44,7 @@
 
 ## 种子定义的端点 kind 约束
 
-以下限制只描述这份种子快照；目标实例若已发布扩展关系，按其 `document.relations` 的端点白名单判断。
+以下限制只描述这份种子快照；目标实例若已通过 GUI 启用扩展关系，按其 `document.relations` 的端点白名单判断。
 
 - **`track` 不能作为任何关系的 source 或 target**（29 条里 0 条）。
 - **`medium` 只能作为 `bonus_included_in` 的 target**，不能作 source。
@@ -59,7 +59,7 @@
 
 ## 种子关系的属性字段（29 条均允许下列 9 个字段）
 
-目标实例可在定义 GUI 中调整关系允许的字段；写入前以已发布定义的 `document.relations[code].fields` 与 `document.fields` 为准。
+目标实例可在定义 GUI 中调整关系允许的字段；写入前以当前生效定义的 `document.relations[code].fields` 与 `document.fields` 为准。
 
 | 字段 | 类型 | 用法 |
 | --- | --- | --- |
@@ -96,7 +96,7 @@
 3. **成环检测只在同一关系码的边集内进行**：跨码的长路径环（`adaptation_of` + `sequel_of`…）服务端看不见，
    所以"写入成功"不等于全库 DAG 成立。审查结论请限定在已复核的局部。
 4. **种子关系未设置基数限制**：29 条关系的 `max_outgoing` / `max_incoming` 全为 `0`，
-   `cardinality_exceeded` 与 `invalid_endpoint_types`（`source_types` / `target_types` 全为 `null`）
+   `cardinality_exceeded`
    在这份种子定义下**无法触发**；目标实例若已扩展，须重新判断。
 
 ## 载荷与端点

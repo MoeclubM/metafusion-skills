@@ -11,21 +11,28 @@
 
 | 技能 | 路径 | 说明 |
 |---|---|---|
-| **metafusion-curator** | [`skills/metafusion-curator/`](skills/metafusion-curator/SKILL.md) | 站点数据的读写与审查总则：查重（含 `types`）、层级归属、关系审查、封面、多语言、证据与写后核验；附本地凭据与单一通用客户端、API 行为、错误码、接口归属、文件上传、数据模型、类型码与字段白名单（`reference-types-and-fields.md`）、关系码全表（`reference-relations.md`）、模型缺口清单（`reference-model-gaps.md`）参考。 |
+| **metafusion-curator** | [`skills/metafusion-curator/`](skills/metafusion-curator/SKILL.md) | 站点数据的读写与审查总则：按身份锚点、内容与父级作用域查重、层级归属、关系审查、封面、多语言、证据与写后核验；附本地凭据与单一通用客户端、API 行为、错误码、接口归属、文件上传、数据模型、字段适用层级与白名单（`reference-types-and-fields.md`）、关系码全表（`reference-relations.md`）、模型缺口清单（`reference-model-gaps.md`）参考。 |
 | **lrm-catalog-standards** | [`skills/lrm-catalog-standards/`](skills/lrm-catalog-standards/SKILL.md) | MetaFusion LRM 编目与发行版命名规范：按当前 Agent / Collection / Work / ContentUnit / Expression / Release / Medium / Track 边界处理跨媒介实体与发行版命名。 |
 
 两个技能互为补充：`metafusion-curator` 是数据操作与审查总则，`lrm-catalog-standards` 是发行版命名与内容复用的细分规范。
 两者都引用 `reference-api-behavior.md`；与实例响应不一致时以实例为准。
 
-## 契约基线
+## 参考资料的维护边界
 
-- 统一入口是 `/api`，**没有 `/api/v1`、`/api/v2` 版本前缀**；实体写入统一走 `POST|PUT /api/catalog/entities`，关系走 `/api/catalog/relations`。
-- 固定实体骨架为八类：`agent` / `collection` / `work` / `content_unit` / `expression` / `release` / `medium` / `track`；`attributes` 的可写字段 = 实体 `types` 的字段并集，不声明类型就只能写空 `attributes`。
-- 发布是 PUT 写 `status: "published"`；lifecycle 只做合并与停用（body 无 `action`），**退回走专属下架端点** `POST /api/catalog/entities/{id}/unpublish`（权限 `catalog.lifecycle.manage`，`published → draft`，体 `{expected_version, edit_note, sources}`）；关系码共 29 条，方向与属性以 `reference-relations.md` 为准。
-- 哪些前缀属于编目、哪些不属于：见 [接口归属与写入范围](skills/metafusion-curator/reference-endpoint-scope.md)。
-- 文件怎么传、怎么挂到实体上：见 [文件上传与绑定](skills/metafusion-curator/reference-file-upload.md)。
-- 核心/辅助来源、当前修订与封面授权：见[字段级来源、当前版本与封面权利策略](skills/metafusion-curator/reference-source-policy.md)。
-- 写库被拒怎么办：见 [API 错误码与修复动作](skills/metafusion-curator/reference-api-errors.md)。
+技能入口负责选择流程，不重复维护完整码表；动态定义始终以目标实例当前生效结果为准。
+
+| 内容 | 唯一维护入口 |
+| --- | --- |
+| API 载荷、校验与状态转换 | [API 行为](skills/metafusion-curator/reference-api-behavior.md)、[载荷示例](skills/metafusion-curator/reference-api-templates.md) |
+| 创作与发行层级、跨媒介范式 | [数据模型](skills/metafusion-curator/reference-data-model.md) |
+| 动态字段、适用层级与词表种子对照 | [字段与适用层级](skills/metafusion-curator/reference-types-and-fields.md) |
+| 关系码、方向与端点种子对照 | [关系](skills/metafusion-curator/reference-relations.md) |
+| 来源等级、当前版本与图片权利 | [来源策略](skills/metafusion-curator/reference-source-policy.md) |
+| 系统归属、鉴权与引用判定 | [接口归属](skills/metafusion-curator/reference-endpoint-scope.md) |
+| 文件上传、绑定与读取 | [文件上传](skills/metafusion-curator/reference-file-upload.md) |
+| 错误处置与模型扩展 | [错误码](skills/metafusion-curator/reference-api-errors.md)、[模型缺口](skills/metafusion-curator/reference-model-gaps.md) |
+
+改动共享事实时更新对应参考，质检页保留验收动作；不要在 README 或技能入口再维护关系数量和完整字段列表。
 
 ## 安装方式
 
@@ -40,12 +47,8 @@ cp -r metafusion-skills/skills/lrm-catalog-standards  <your-repo>/.cursor/skills
 
 其他 Agent 平台请复制到对应技能目录（如 ZCode 的 `~/.agents/skills/`、Claude Code 的 `.claude/skills/`）。两个技能建议同时安装：`lrm-catalog-standards` 内部以相对路径引用 `metafusion-curator`。
 
-`metafusion-curator/local/` 包含通用 API 客户端；复制技能后创建已忽略的 `credentials.json` 即可，令牌不要提交。
+`metafusion-curator/local/` 包含通用 API 客户端；安装和更新只复制版本库中的技能文件，不复制本机 `credentials.json`、审计产物或忽略文件。两个技能保持同一源仓修订并同级安装，避免相对引用断裂；凭据单独在目标环境创建并保持忽略。
 
 ## 许可、来源与编目边界
 
-技能内容以**目标实例的实际响应**为准校准：接口行为、枚举与字段码都会随实例配置演进，
-动手前先读 `GET /api/openapi.json` 与 `GET /api/catalog/definitions`。
-编目采用字段级证据矩阵：核心字段只用权利方、出版/发行/制作方、作者/艺人官方页、官方目录/注册记录或明确提供该具体版次数据的官方/授权渠道；MusicBrainz、Wikidata、Discogs、Bangumi、TMDB、IMDb、百科/社区站与 Wiki 只作发现、交叉核对或辅助事实，不能单独满足核心、合并或计数门槛。
-逐条打开来源并写清 citation 支持的字段；当前资格只认 `revision.version == entity.version` 的当前修订，历史来源、`self`、站内旧值、搜索摘要与模型记忆不能补核心证据。
-封面是独立硬门：官方/权利方图源与覆盖本服务展示、复制或热链的明确许可/授权必须同时通过并留有 sidecar 证据包；来源链接不自动授予使用权，权利不明时不使用、不计数。完整规则见[字段级来源、当前版本与封面权利策略](skills/metafusion-curator/reference-source-policy.md)。
+动手前读取目标实例的 OpenAPI 与当前生效 definitions；实例差异不能靠修改文案掩盖。核心字段、合并资格、当前修订、封面来源与使用权统一采用 [字段级来源与权利策略](skills/metafusion-curator/reference-source-policy.md)，不在安装页另维护一份门槛。

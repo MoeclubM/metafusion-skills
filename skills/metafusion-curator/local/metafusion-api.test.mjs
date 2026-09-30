@@ -30,7 +30,6 @@ function currentEntity() {
     version: 4,
     title: "Example",
     original_language: "en-US",
-    types: ["film"],
     attributes: { language: "en" },
     external_ids: {},
     pictures: [],

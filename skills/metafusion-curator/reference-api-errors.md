@@ -3,7 +3,7 @@
 写库被拒时响应体形如 `{"error":"<code>"}`。**很多码带前缀或补充信息**，实测形态有：
 
     {"error":"unknown_field: duration_seconds"}
-    {"error":"invalid_type: not_a_type"}
+    {"error":"unknown_field: not_a_field"}
     {"error":"invalid_structural_field: work_id"}
     {"error":"invalid_payload: work.title"}
     {"error":"locator: invalid_term"}
@@ -25,18 +25,20 @@
 | `invalid_payload` | 载荷形状不对（含未知顶层字段）；消息可能指明位置（`invalid_payload: work.title`） | 严格按当前 DTO 写：发行版名用 `title`、时长用 `duration`、证据用 `sources` 对象数组；未知键一律删掉再试 |
 | `id_must_be_empty` | 创建时带了 `entity.id` | 创建一律留空 id、`expected_version` 传 0 |
 | `invalid_entity` | kind 不在八类现行值里（如 `artist` 会走到这里）；`title` 缺失/超长 | kind 只用现行八类；`title` 任何 kind 都必填（trim 非空、≤2000） |
-| `invalid_entity_type` | importer 的 `entity_type` 不在支持范围 | 只用实例支持的取值（`work` / `release` 等） |
+| `invalid_entity_type` | importer 的 `entity_type` 不在支持范围 | 当前接受 work/artist/organization/character；release 不是此参数值。显式来源 URL 可决定实际返回类型，回读确认 |
 | `not_supported: <开关>` | 该导入开关/来源不支持（如 `media_type_hint`） | 去掉该开关或换来源 |
 | `invalid_picture` | 图片形状不对（相对路径、缺 source…） | `pictures[].url` 必须绝对 HTTP(S)；`source` 满足证据规则 |
 | `invalid_picture_time` | 图片的可选时间字段不合法 | 去掉或修正 `taken_at` |
+| `invalid_picture_period` | `usage_period` 两端都空、日期非法或区间明确反向 | 至少填写一端，按部分日期或 RFC3339 表达图片用于实体的事实时段；它不是许可期限 |
+| `invalid_picture_asset` | `pictures[].asset_id` 不是 UUID | 使用已核对的存储资产 UUID；通过形状校验不证明资产存在或有 `cover_image` 绑定 |
+| `duplicate_picture` / `too_many_pictures` | 同实体重复图片 URL，或超过 40 张 | 去掉重复项并控制数量，保留手动数组顺序；首项是封面 |
 | `invalid_url` / `text_too_long` | URL 不合法 / 文本超长 | 按字段上限裁剪，别用截断后的半截 URL |
 
-## 类型、属性、词表与翻译
+## 字段适用层级、属性、词表与翻译
 
 | 错误码 | 含义 | 修复动作 |
 | --- | --- | --- |
-| `unknown_field: <码>` | 该字段码不在**本实体声明的 types** 的可写字段集里 | 先读 `definitions.document.types[码].fields` 取并集；不声明 `types` 时任何属性键都会被拒 |
-| `invalid_type: <码>` | 实体的 `types` 里有不存在/已禁用、或 `kinds` 不含本 kind 的类型码 | 用 `document.types` 里 `kinds` 含本 kind 且 `enabled` 的码 |
+| `unknown_field: <码>` | 字段未声明或不适用于本实体 kind | 检查 `document.fields[码].applicable_kinds`；当前协议没有实体 types |
 | `invalid_term` | 枚举值不在词表里；消息常带字段前缀（`packaging: invalid_term`、`locator: invalid_term`） | 用该字段 `vocabulary` 的**词项代码**；自由文本字段不要当枚举填 |
 | `disabled_field` | 该字段码当前未启用 | 换用已启用字段，或按模型缺口上报 |
 | `invalid_translation` / `invalid_locale` / `translation_too_long` | 翻译行形状不对 / locale 不是合法语言标签 / 文本超上限 | `translations` 是对象 `{locale:{title,summary,aliases}}`；`title` 非空且 ≤2000，`summary` 与 `aliases` 单项 ≤500 |
@@ -73,13 +75,13 @@
 | `merge_relation_conflict` | 合并会产生"自己指向自己"的边 | 先删掉造成自环的那条关系再合并 |
 
 **反向边是否判重由 `symmetric` 决定**：声明 `symmetric=true` 的关系会检查反向重复边；种子 29 条**全部 `symmetric=false`**，
-A→B 与 B→A 同类型的两条边都合法——需要双向语义就建两条。
+A→B 与 B→A 可能都被服务器接受；同一事实的反向展示不需要另建边，只有来源证明另一条独立事实时才新增，不能以服务器接受为正确性证明。
 
 ## 生命周期与并发
 
 | 错误码 | 含义 | 修复动作 |
 | --- | --- | --- |
-| `version_conflict`（409） | `expected_version` 与库里不一致 | 回读完整实体，确认并发改动后再决定是否基于新版本重做；客户端不得自动重放 mutate。关系删除不带版本也走这里 |
+| `version_conflict`（409） | 实体/关系的 `expected_version` 不匹配，或 definitions 的 `expected_etag` 缺失/不匹配 | 回读完整目标，确认并发改动后再决定是否基于当前状态重做；客户端不得自动重放 mutate。关系删除不带版本也走这里 |
 | `use_lifecycle_endpoint` | 用 PUT 提交 `deleted`/`merged`，或把已发布条目降级（`published → draft`） | 停用/合并走 `POST /api/catalog/entities/{id}/lifecycle`（body `{target_id?, expected_version, edit_note, sources}`，没有 `action`）；退回走 `POST /api/catalog/entities/{id}/unpublish`（权限 `catalog.lifecycle.manage`，body `{expected_version, edit_note, sources}`，不能带 `target_id`） |
 | `invalid_status` | lifecycle 作用在 `deleted`/`merged` 条目上，或状态值非法；下架端点收到的实体不是 `published`（`draft`/`pending_review` 没有可下架的内容，`deleted`/`merged` 是终态） | 先 `GET` 读回 `status`：已是 `draft` 就不必下架；终止态不可再走 lifecycle，要恢复只能新建 |
 | `invalid_merge_target` | 合并目标与源不同 kind／不同归属／不同父级，或目标未发布 | 只合并同一层级、同一容器里的重复建档，目标必须 `published` |
@@ -93,15 +95,14 @@ A→B 与 B→A 同类型的两条边都合法——需要双向语义就建两�
 
 | 错误码 | 含义 | 修复动作 |
 | --- | --- | --- |
-| `rate_limited`（429） | 超过每进程 IP + 完整路由的固定窗配额：实体检索 / `expressions/details` / `tags` 120/min、货架 feed 60/min、对比与 `importer/preview` 10/min | 读 `Retry-After` 退避；读取可重试，写入不自动或立刻重放。多副本下该值不是全局精确上限 |
+| `rate_limited`（429） | 超过进程内账户/IP + 路由模板的固定窗配额；实际额度取账号/用户组/全局策略或路由默认 | 读 `Retry-After` 与 `X-RateLimit-*` 退避；读取可重试，写入不自动或立刻重放。后台策略可调整或 unlimited；多副本计数独立，不是全局精确上限 |
 | `invalid_limit` / `invalid_offset` / `invalid_page` / `pagination_conflict`（400） | 实体列表分页违反 `limit=1..100`、非负整数 offset、正整数 page，或同时传 page+offset | 修正客户端参数；服务端不会静默收敛。`page` 与 `offset` 二选一 |
 
 ## 种子定义中不可达的错误码（"没遇到"不等于漏测）
 
-- `invalid_endpoint_types`：29 条关系的 `source_types` / `target_types` 全为 `null`，白名单不存在；
 - `cardinality_exceeded`：29 条关系的 `max_outgoing` / `max_incoming` 全为 `0`，基数上限不存在。
 
-这两条实现里存在；目标实例若扩展了端点类型或基数限制，就可能触发。检查清单按该实例已发布定义标注适用性，不要把种子快照当运行态。
+基数校验由目标实例当前关系定义控制；当前关系仅使用 source_kinds/target_kinds，已无实体业务类型端点白名单。检查清单按该实例当前生效定义标注适用性，不要把种子快照当运行态。
 
 ## 遇到没见过的错误
 

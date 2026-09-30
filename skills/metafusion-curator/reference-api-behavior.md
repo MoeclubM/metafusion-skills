@@ -7,7 +7,7 @@
 
 - 全站唯一入口是 `/api`，全站只有这一套前缀。`/api/v1/catalog/works`、`/api/v2/catalog/entities` 这类带版本号的路径
   调不通，不要照抄；版本不明时不要尝试写入。
-- 先读 `GET /api/openapi.json`（实例自描述）与 `GET /api/catalog/definitions`（已发布的动态定义），再读目标实体详情。
+- 先读 `GET /api/openapi.json`（实例自描述）与 `GET /api/catalog/definitions`（当前生效的动态定义），再读目标实体详情。
   不要从示例里的枚举、默认值或错误码反推服务器行为。
 - 与本文不符时以实例响应为准；**不要绕过 API 直接改数据库**，那会让修订与审计失真。
 
@@ -24,7 +24,7 @@
 | `medium` | 发行内的盘/卷/文件集。必须有 `release_id`；`parent_id` 只能指向同一 Release 的 Medium。 |
 | `track` | Medium 内的位置项。必须有 `medium_id`；`parent_id` 只能指向同一 Medium。收录经 `contents`。 |
 
-`types`（动态业务类型）与 `Kinds` 的关系是：每个类型声明自己允许挂在哪些 kind 上，一个实体可以组合多个类型。
+当前实体只有固定结构 kind，没有业务分类 types；字段自身的 applicable_kinds 声明适用层级。
 创作者与机构走 `agent` kind，系列与世界观走 `collection` kind + 关系——这就是 `Artist` / `Franchise` 两个名字的现行落点。
 
 ## 结构不变量
@@ -52,21 +52,17 @@
 - 所有实体统一使用 `translations` 对象：`{"zh-CN":{"title":"…","summary":"…","aliases":["…"]}}`。
   全站只认这一种对象形状，跨 kind 混用数组形状会被拒收。
 - 展示回退：请求语言 → `en-US` → 实体 `original_language` → 基础 `title`。展示值不回写基础题名。
-- `attributes.tags` 是平铺**字符串**数组，且**只有 10 个 work 类型有**；标签不是独立字典表，
-  `GET /api/catalog/tags` 只是对它的频次聚合。release / medium / track / content_unit / expression 写 tags 会被拒。
-- **可写属性由 `types` 决定**：`attributes` 的字段白名单 = 实体声明的 `types` 的字段并集。不声明 `types` 就只能写
-  空 `attributes`（否则 `unknown_field`）；类型码的 `kinds` 不含本 kind 则 `invalid_type`。清单与逐 kind 字段表见
-  [类型码、字段白名单与结构化字段](reference-types-and-fields.md)。
-- 类型、字段、词表、关系、模板、场景（scheme）全部来自 definitions，不在客户端硬编码。
+- `attributes.tags` 是平铺字符串数组，当前种子适用于八种 kind；它是自由标签，不是实体分类，也不独自证明身份。`GET /api/catalog/tags` 只作频次聚合。
+- 可写属性由 `document.fields` 中字段的 `applicable_kinds` 决定，字段值按其 `type` 与词表/引用/子组约束校验；当前请求不能含已移除的实体 `types`。详见 [字段适用层级与结构化字段](reference-types-and-fields.md)。
+- 字段、词表、关系、模板、场景（scheme）全部来自 definitions，不在客户端硬编码。
   **返回形状是嵌套的，别读错一层**：
 
       GET /api/catalog/definitions
       {
-        "base_version": <运行时版本>, "state": "published", "created_at": "…", "id": "…",
+        "etag": "<当前覆盖保护标记>", "updated_at": "…",
         "kinds": {"work": {"names": {"zh-CN": "作品", "en-US": "Works", …}}, …},
         "document": {
-          "types":        {"album": {"names": {…}, "kinds": ["work"], "fields": ["duration", "duration_source", …]}, …},
-          "fields":       {"catalog_number": {"type": "text", "required": false, "enabled": true,
+          "fields":       {"catalog_number": {"type": "text", "applicable_kinds": ["release", "medium"], "required": false, "enabled": true,
                                              "searchable": true, "comparable": true}, …},
           "vocabularies": {"format": {"names": {…}, "terms": {"cd": {"names": {…}, "enabled": true}, …}}, …},
           "relations":    {"adaptation_of": {"source_kinds": ["work"], "target_kinds": ["work"],
@@ -75,15 +71,16 @@
           "templates":    {…}, "schemes": {…},
           "structure":    {"content_unit": {"fields": [{"code": "work_id", "target_kinds": ["work"], "required": true},
                                                        {"code": "parent_id", "scoped_by": "work_id"}]}, …}
-        }
+        },
+        "relationship_rules": [{…}, …]
       }
 
-  写代码时 `defs.relations` / `defs.types` 取到的是 `undefined`——一律先下到 `document.`；
-  kind 的多语言名在**顶层** `kinds`。
+  写代码时 `defs.relations` / `defs.fields` 取到的是 `undefined`——一律先下到 `document.`；
+  kind 的多语言名在**顶层** `kinds`。`etag` 只用于保存时防止覆盖，不能读取旧定义；当前只保留一份生效文档，没有服务端定义草稿、历史版本、发布或回滚接口。
 - `document.structure` 是**归属必填与父子作用域的唯一机器可读来源**：`expression` / `content_unit` → `work_id`
   （`required: true`），`medium` → `release_id`，`track` → `medium_id`；`parent_id` 由 `scoped_by` 限定同容器；
   `release` 是 `"fields": null, "subjects": true`（**没有 `work_id`**）。固定归属外键及 Release `subjects` / Track `contents`
-  必须与数据库约束一致；草稿中的非空 `structure` 若改变这些规则会返回 `fixed_structure_mismatch`。业务关系码可在后台 GUI 扩展。
+  必须与数据库约束一致；待保存文档的非空 `structure` 若改变这些规则会返回 `fixed_structure_mismatch`。业务关系码可在后台 GUI 扩展。
 - `locator` 的键集合不硬编码，来自 definitions 的 `locator` 组。种子默认含 `relative_to`
   （enum `locator_reference`，**只有 `medium` / `track` 两个取值**）、`page_start` / `page_end` / `path` / `chapter`
   （`semantics: locating`，本版定位，随排版变化）与 `time_start_ms` / `time_end_ms`（`semantics: content`，
@@ -95,8 +92,10 @@
   写任何键都是 `unknown_field`。缺落点的事实按 [模型缺口与上报路径](reference-model-gaps.md) 上报，
   不要塞进 `locator` 或 `attachments` 凑形状。
 - 旧的顶层 `cover_aspect` / `cover_image_url` 字段**不在写入 DTO 里**：实体封面统一走
-  `pictures: [{url, caption:{locale:说明}, taken_at?, source:{kind,citation,url?}}]`；URL 必须是绝对 HTTP(S)。
-  DTO 没有 `asset_id`、许可类型、授权范围或期限，`Picture.source` 与实体修订 `sources` 都不是权利记录；
+  `pictures: [{url, caption:{locale:说明}, taken_at?, version_label?, usage_period?, role?, asset_id?, source:{kind,citation,url?}}]`；URL 必须是绝对 HTTP(S)。
+  数组顺序就是展示顺序，`pictures[0]` 是手动选定的封面；`taken_at` 不排序，`version_label` 是多语言图片版本名，`usage_period: {begin?, end?}` 是该图片用于实体的事实时段，不会自动切换封面。时段至少一端非空，接受部分日期或 RFC3339，允许重叠；明确反向的区间会被拒绝。
+  `role` 可为空，否则必须是当前 `picture_role` 词表的启用码；同一实体不得重复 URL，最多 40 张。自托管图的 `asset_id` 是存储服务资产 UUID，写入方先完成 `binding_role=cover_image` 绑定并核对资产；目录只校验 UUID，不跨服务检查资产存在或封禁状态。
+  DTO 没有许可类型、授权范围或授权期限；图片 `usage_period` 不是许可期限，`Picture.source` 与实体修订 `sources` 都不是权利记录；
   官方图源不自动授权复用，封面计数须另有权利 sidecar，规则见[字段级来源策略](reference-source-policy.md)。
   画幅比例若实例定义声明了对应字段码，它在 `attributes` 下，以 `GET /api/catalog/definitions` 为准。
 
@@ -104,23 +103,26 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/catalog/definitions` | 已发布的动态定义（类型/字段/词表/关系/模板/场景） |
-| GET | `/api/catalog/entities` | 检索：`kind`/`kinds`/`q`/`type`/`types`/`status`/`work_id`/`content_unit_id`/`release_id`/`medium_id`/`parent_id`/`field`/`value`/`tags`，返回 `items` + 真实 `total` |
+| GET | `/api/catalog/definitions` | 当前生效动态定义（字段/词表/关系/模板/场景/固定结构展示名）与 `etag` |
+| GET | `/api/catalog/entities` | 检索：`kind`/`kinds`/`q`/`status`/`work_id`/`content_unit_id`/`release_id`/`medium_id`/`parent_id`/`field`/`value`/`tags`，返回 `items` + 真实 `total` |
 | GET | `/api/catalog/entities/{id}` | 读取可见实体（存储/互动也用它判定可见性） |
 | GET | `/api/catalog/entities/{id}/resolve` | 解析合并后的当前身份 |
 | GET | `/api/catalog/entities/{id}/revisions` | 修订历史 |
 | GET | `/api/catalog/entities/{id}/relations` | 正向与反向关系，响应同时带回对端 `entities` |
 | GET | `/api/catalog/entities/{id}/occurrences` | 反向收录：expression = 自身收录，content_unit = 其表达，work = 其表达 |
-| GET | `/api/catalog/releases/{id}/toc` | 同一快照读取发行、按位置排序的 Medium / Track、去重的可见 Expression 与定义版本 |
+| GET | `/api/catalog/releases/{id}/toc` | 同一快照读取发行、按位置排序的 Medium / Track、去重的可见 Expression 与当前 `definition_etag` |
 | POST | `/api/catalog/expressions/details` | 批量取表达详情（body `{ids:[...]}`，上限 500） |
-| GET | `/api/catalog/compare?ids=` | 对比 2–6 个发行 |
+| GET | `/api/catalog/compare?ids=` | 对比 2–6 个可见实体；发行/载体附带承载内容 |
 | GET | `/api/catalog/shelves`、`/api/catalog/shelves/feed` | 货架规则与求值结果 |
 | GET | `/api/catalog/external-databases` | 启用的外部权威库预设 |
 | GET | `/api/catalog/tags` | 标签频次聚合（不是可写的字典表） |
 | GET | `/api/catalog/me/home-preferences` | 调用者自己的主页偏好 |
 | GET | `/api/exchange/entities/{id}` | 导出该实体的快照（只读，匿名可访问） |
-| GET | `/api/admin/catalog-definitions` | 定义版本列表（需 `catalog.definitions.manage`；目录服务提供，不属账号） |
-| POST | `/api/importer/preview`、`/api/importer/import` | Bangumi 预览 / 按证据导入（**注意前缀是 `/api/importer/*`，不是 `/api/catalog/importer/*`**） |
+| GET | `/api/admin/catalog-definitions` | 单份当前配置 `{etag, document, updated_at}`（需 `catalog.definitions.manage`；目录服务提供，不属账号） |
+| POST | `/api/admin/catalog-definitions/impact` | 提交 `{document}` 只读检查影响，不保存草稿；需 `catalog.definitions.manage` |
+| PUT | `/api/admin/catalog-definitions` | 完整替换配置，体为 `{document, expected_etag, edit_note, sources}`；保存时再次检查影响，需 `catalog.definitions.manage` |
+| GET | `/api/importer/sources` | 读取实例真正实现的导入适配器；新增外部库注册表项不自动实现适配器，需 `catalog.import.submit` |
+| POST | `/api/importer/preview`、`/api/importer/import` | 按可用适配器预览 / 按证据导入（**注意前缀是 `/api/importer/*`，不是 `/api/catalog/importer/*`**） |
 
 ### 可见性与权限探测
 
@@ -134,19 +136,20 @@
 只有叶字段声明 `searchable` 且整条链路启用时才可用，不确定就先读 definitions。
 实体列表分页是严格边界：`limit` 默认 50、只接受 1–100；`offset` 必须是 ≥0 的整数，`page` 必须是 ≥1 的整数，且 `page` 与 `offset` 互斥。非法值分别返回 `invalid_limit` / `invalid_offset` / `invalid_page`，同时传 `page` 与 `offset` 返回 `pagination_conflict`；不会静默收敛。客户端分页 helper 必须在发请求前做同样校验。
 
-### 限流（每进程按 IP + 完整路由计数）
+### 限流（每进程按账户或 IP + 路由模板计数）
 
-| 路由 | 上限 | 备注 |
+| 路由 | 内置默认额度 | 备注 |
 | --- | --- | --- |
-| `GET /api/catalog/entities` | 120/min/实例 | 固定窗按客户端 IP + 完整路由计数；同进程会共享，多副本部署下不是全局精确额度 |
+| `GET /api/catalog/entities` | 120/min | 登录按账号，匿名按客户端 IP；同主体同路由模板共享，各副本计数独立 |
 | `POST /api/catalog/expressions/details` | 120/min | |
 | `GET /api/catalog/tags` | 120/min | |
 | `GET /api/catalog/shelves/feed` | 60/min | |
 | `GET /api/catalog/compare` | 10/min | |
 | `POST /api/importer/preview` | 10/min | |
 
-超限返回 `429 {"error":"rate_limited"}` 并带 `Retry-After` 与 `X-RateLimit-*`。实现是进程内固定窗口；负载均衡后的总吞吐和共享程度取决于副本数，不能把 120/min 宣称为跨实例全局硬上限。
-**必须按 `Retry-After` 退避**：并发编目会与同 IP、同实例的其它客户端共享配额；读取可退避重试，写入不要自动或立刻重放。
+表中是路由内置回退值；实际额度按账号规则 → 用户组 → 全局默认 → 路由默认解析，可由后台调整。`GET /api/admin/rate-limits` 返回单份 `{etag, policy, updated_at}`（需 `catalog.definitions.manage`）；它独立于元数据 definitions，配置保存不修改元数据 etag。
+受限请求带 `X-RateLimit-Limit` / `Remaining` / `Reset`，超限返回 `429 {"error":"rate_limited"}` 和 `Retry-After`；命中 `unlimited` 则跳过计数，不下发额度头。计数仍是每进程的固定窗口，不能声称跨副本全局精确上限。
+**必须按 `Retry-After` 退避**：同账号的多 IP 或标签页会共享同进程的路由额度，匿名则按 IP 共享；读取可退避重试，写入不要自动或立刻重放。
 
 ## 写入接口的实际边界
 
@@ -192,23 +195,24 @@
 
 断言"响应里有/没有某字段"之前先看清形状（实测）：
 
-- `revisions` 行只有**写后快照**：`{id, version, actor_id, actor_name, actor_role, created_at, definition_version, edit_note, sources, snapshot}`——
+- `revisions` 行只有**写后快照**：`{id, version, actor_id, actor_name, created_at, edit_note, sources, snapshot}`——
   **没有 `before` / `after`**。当前证据只认 `revision.version == entity.version`；`sources` 是修订级而非字段级 provenance。
-  核对改动要拿 `snapshot` 与当前实体比对，不要去找前后差异字段。
-- `GET /api/catalog/entities/{id}/relations` 返回 `{items, entities, subject_id}`：`entities` 是对端实体，
+  核对改动要拿 `snapshot` 与当前实体比对，不要去找前后差异字段。响应没有 `actor_role` 或定义版本字段，不能用当前 definitions 或其他响应的 `definition_etag` 还原历史规则。
+  Track 历史快照中的收录按表达当前可见性裁剪，库中原始事实保持完整；公开读回不能作为完整历史备份。
+- `GET /api/catalog/entities/{id}/relations` 返回 `{items, entities, subject_id}`：`entities` 包含关系两端实体与主体，
   `subject_id` 是被查实体；关系版本号从这里取。
-- 实体 DTO 另含只读 `updated_at`；`pictures[]` 元素可带可选 `taken_at`。
+- 实体 DTO 另含只读 `updated_at`；`pictures[]` 的可选字段与排序约束见上文图片契约。
 - `GET /api/catalog/entities` 返回 `items` + 真实 `total`（COUNT）；分页边界**可能重复返回同一实体**，
   客户端建本地索引必须按 `id` 覆盖。
 - `POST /api/catalog/expressions/details`：body `{ids:[…]}`，上限 500（超出 `too_many_ids`），
   返回 `{items, entities}`；`ids` 为空数组 → `400 invalid_payload`。
-- `GET /api/catalog/compare?ids=`：只接受 **2–6** 个发行，1 个或 7 个 → `compare_requires_two_to_six`，
-  非 UUID → `invalid_id`。
+- `GET /api/catalog/compare?ids=`：接受 **2–6** 个可见实体，1 个或 7 个 → `compare_requires_two_to_six`，非 UUID → `invalid_id`。
+  返回 `{items: [{entity, children: [{medium, tracks}]}]}`，没有 `mediums` 键。`entity.attributes` 仅保留定义中 `comparable` 的字段；发行的 `children` 含各载体与轨道，载体的 `children` 含自身与轨道，其他 kind 的 `children` 为空。
 
 ## 不要过度声称
 
 - **不要**声称这些接口提供跨实体全量 ACID 事务、字段级来源、封面许可字段、完整审计或全库 DAG 证明：
   单次写入是**单实体（或单关系）事务**，修订快照按实体记录；来源只属于修订。
 - **不要**用近似数据填补模型缺口，也不要为了绕过校验去改数据库、改触发器或伪造 `work_id`。
-- 目标实例的已发布 definitions 与本文的种子默认值可能不同（定义由管理员演进）；
+- 目标实例的当前生效 definitions 与本文的种子默认值可能不同（定义由管理员演进）；
   以 `GET /api/catalog/definitions` 为准，并在报告中列出差异。

@@ -17,7 +17,7 @@
         └── track（容器内位置）
             └── contents[]（引用一个或多个 expression，带 position 与 locator）
 
-`Work` 是创作母体；它的题名不携带季数、卷号、盘号、画质、音质或包装。
+`Work` 保存创作身份与正式题名。发行侧的盘号、画质、音质和包装不能拼入题名；官方创作名中的季数、卷号或 OST 等词须按来源判断身份，不能机械删除。
 `ContentUnit` 是同一 Work 内的逻辑目录（第几话、第几章、第几卷的篇目），
 `Expression` 是**可被多个发行复用的那一层**（某个录音母版、某集正片、某段正文、某个译本）。
 `Release` 是带日期、发行者、条码、品番和包装信息的一个真实版本；
@@ -43,8 +43,7 @@
   保存会被拒绝（`undeclared_release_subject`）。
   `subjects` 本身**不是必填字段**：服务端允许零 `subjects`（甚至零 `medium`）的发行入库，
   但那样的发行表达不了收录事实，自检会记 P1，别把"服务端没拦"当成建模完成。
-- **每个实体都要声明 `types`**：`attributes` 的可写字段 = 该实体 `types` 的字段并集；不声明类型就只能写空
-  `attributes`（否则 `unknown_field`）。类型码与逐 kind 字段表见 [类型码、字段白名单与结构化字段](reference-types-and-fields.md)。
+- `attributes` 的可写字段由当前 `document.fields` 的 `applicable_kinds` 决定；当前请求没有实体 `types`。详见 [字段适用层级与结构化字段](reference-types-and-fields.md)。
 - 所属域不可变：普通 PUT 不能改 `kind` / `work_id` / `release_id` / `medium_id`；换归属等于重建实体。
 
 ## 表达复用的边界
@@ -74,14 +73,13 @@
 
 ### 音乐专辑
 
-> **跨专辑复用的范式**：专辑 = 一个 `work`（`types: ["album"]`）；有独立作品身份的歌曲 = 各自的
-> `work`（`types: ["song"]`），专辑到歌曲可用已发布定义允许的 `includes` 关系；录音 = 歌曲 Work 下的
+> **跨专辑复用的范式**：专辑 = 一个有证据的 `work`；有独立作品身份的歌曲 = 各自的
+> `work`，专辑到歌曲可用当前定义允许的 `includes` 关系；录音 = 歌曲 Work 下的
 > `expression`；实体盘 = `release` + `medium` + `track`，由 `track.contents` 收录录音。
 > 专辑自身的 `content_unit` 只表达确属该专辑内部的篇目目录，不能把已有独立歌曲 Work 的录音
 > 改挂到专辑 Work 下。发行的 `subjects` 必须同时覆盖专辑和每首被收录歌曲的 Work；若实例词表没有
 > 适合歌曲作为组成部分的 `release_role`，按实现缺口上报，不把 `compilation` 解释成精确语义。
-> 电影《君の名は。》与它的 OST 专辑同名、同 kind（都是 `work`），**靠 `types` 与收录关系区分**——
-> 这正是查重必须带 `types` 的原因。
+> 电影《君の名は。》与它的 OST 专辑同名、同 kind（都是 `work`），**靠内容身份、责任主体、来源与收录关系区分**；标签只给线索，不能独自证明身份或成为合并理由。
 
 1. 歌曲创作母体是 Work；具体录音/母带是 Expression（不同编曲版本是不同 Expression，或经 `alternate_take_of` 关联）。
 2. 单曲和专辑各自有真实发行时分别建立 Release；一张专辑的普通版、限定版、地区版也各有 Release，按实物建立 CD、黑胶或特典 BD 的 Medium 与 Track。
