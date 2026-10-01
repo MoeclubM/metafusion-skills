@@ -1,75 +1,42 @@
-# 类型码、字段白名单与结构化字段（面向 Agent）
+# 字段适用层级、白名单与结构化字段（面向 Agent）
 
-本文件回答写库前必须先回答的问题：**这个实体能写哪些属性键？**
-答案不是"字段名看着对就行"，而是由实体声明的 `types` 推导。下表只是种子定义的对照快照，不记录或假设某个运行态 `base_version`；
-目标实例的已发布 definitions 可能已被管理员扩展或调整，动手前一律以
-`GET /api/catalog/definitions` 的实际返回为准（读取形状见 [API 行为参考](reference-api-behavior.md)）。
+实体可写属性按当前生效 definitions 的字段适用层级判断。当前实体与定义均无业务分类 `types`；旧 `document.types`、实体 `types` 和基于它们的字段并集不适用。
 
-## 唯一硬规则：`attributes` 白名单 = 声明的 `types` 的字段并集
+## 唯一规则：字段自身的 `applicable_kinds` 决定适用层级
+
+先读 `GET /api/catalog/definitions`，取 `document.fields` 中 `applicable_kinds` 包含实体 kind 的字段码。字段值按该字段的 `type`、词表、引用范围、启用状态及子组约束校验；字段的值类型不是实体业务分类。没有适用层级的字段不能直接写到 Entity.attributes，可能专供关系或内嵌组使用。
 
     {
       "entity": {
         "kind": "release",
-        "types": ["release"],                       // ← 类型码决定能写哪些属性
         "attributes": {"catalog_number": "VWBS-1531"}
       }
     }
 
-- **不声明 `types`，`attributes` 必须为空**：property 白名单为空集，写任何键（`catalog_number`、`format`、
-  `duration`、`role`…）都会 `400 unknown_field: <码>`。技能里的示例载荷都带 `types`，照抄即可。
-- 声明了 `types`，但该类型的 `kinds` 不含本实体的 kind → `400 invalid_type: <码>`（如把 `album` 挂到 `release`）。
-- 一个实体可以挂**多个同 kind 的类型**（如 work 写 `["animation","film"]`）；可写属性是这些类型
-  `fields` 的**并集**，并集之外的键照样被拒。
-- `types` 是实体字段，不是属性：类型码本身不要写进 `attributes`。
-- 未发布/未声明的自定义码不要写；字段码存在但该类型没挂它，也等于不存在。
+上述仅演示属性落点，完整创建信封与必填值见 [载荷模板](reference-api-templates.md)。不要向当前请求添加已移除的 `types`；正式用途、媒介属性和身份依实际字段、收录与来源表达，标签不承担业务分类约束。
 
-**写前自查三步**：① 读 `GET /api/catalog/definitions`；② 取该实体 `types` 对应 `document.types[码].fields` 的并集；
-③ 载荷里每个 `attributes` 键都必须在这个并集里（`types` 为空 = 只能写空 `attributes`）。
+## kind → 种子可写属性字段
 
-## 类型码全量清单（种子定义共 20 个）
+下表是源码种子的对照；实例可通过后台 GUI 调整字段 `applicable_kinds`，实际以当前生效定义为准，不靠选择展示模板改变可写范围。
 
-| kind | 类型码 | 备注 |
-| --- | --- | --- |
-| `work` | `album`、`song`、`music`、`animation`、`film`、`novel`、`visual_novel`、`indie_game`、`photobook`、`personal` | 10 个。音乐要区分单曲/专辑/纯音乐；`personal` 用于个人创作/自媒体类母体 |
-| `agent` | `person`、`group`、`organization`、`character` | 4 个。**四者都没有属性字段**（`fields` 为空），见 [模型缺口](reference-model-gaps.md) |
-| `collection`、`content_unit`、`expression`、`release`、`medium`、`track` | 与 kind 同名的单一码 | 必须声明它才能写该 kind 的属性 |
+| kind | `attributes` 种子字段 |
+| --- | --- |
+| `work` | `language`、`edition_date`、`copyright`、`imdb`、`infobox`、`events`、`duration`、`duration_source`、`author`、`volume_count`、`magazine`、`begin_date`、`end_date`、`episodes`、`platform`、`broadcast_start`、`broadcast_weekday`、`broadcast_end`、`air_network`、`tags` |
+| `agent` | `tags` |
+| `collection` | `language`、`tags` |
+| `content_unit` | `language`、`entry_role`、`air_date`、`tags` |
+| `expression` | `language`、`duration`、`version_label`、`isrc`、`events`、`tags` |
+| `release` | `catalog_number`、`barcode`、`isbn`、`edition_date`、`edition_type`、`edition_batch`、`country`、`publisher`、`packaging`、`distribution_channel`、`platform`、`attachments`、`store_bonuses`、`events`、`tags` |
+| `medium` | `catalog_number`、`format`、`role`、`tags` |
+| `track` | `duration`、`role`、`tags` |
 
-> **没有的码不要自造**：当前没有 `manga`（漫画）、舞台剧/音乐剧、实拍电视剧、纪录片、商业主机游戏等类型码。
-> 这类内容只能落到最接近的现有码（漫画当前落 `novel`），语义偏差属于模型缺口，按
-> [模型缺口与上报路径](reference-model-gaps.md) 报告，不要发明码或用近似数据填充。
-
-## kind → 类型码 → 可写属性字段
-
-| kind | 类型码 | `attributes` 可写字段 |
-| --- | --- | --- |
-| `work` | `album` / `song` / `music` | `duration`、`duration_source`、`author`、`language`、`edition_date`、`copyright`、`imdb`、`tags`、`infobox`、`events` |
-| `work` | `animation` | `episodes`、`platform`、`broadcast_start`、`broadcast_weekday`、`broadcast_end`、`air_network`、`language`、`edition_date`、`copyright`、`imdb`、`tags`、`infobox`、`events` |
-| `work` | `film` | `duration`、`platform`、`language`、`edition_date`、`copyright`、`imdb`、`tags`、`infobox`、`events` |
-| `work` | `indie_game` | `platform`、`episodes`、`language`、`edition_date`、`copyright`、`imdb`、`tags`、`infobox`、`events` |
-| `work` | `visual_novel` | `platform`、`episodes`、`volume_count`、`language`、`edition_date`、`copyright`、`imdb`、`tags`、`infobox`、`events` |
-| `work` | `novel` / `photobook` | `volume_count`、`author`（`novel` 另含 `magazine`）、`language`、`edition_date`、`copyright`、`imdb`、`tags`、`infobox`、`events` |
-| `work` | `personal` | `duration`、`language`、`edition_date`、`copyright`、`imdb`、`tags`、`infobox`、`events` |
-| `agent` | `person` / `group` / `organization` / `character` | **无**（`attributes` 必须为空对象） |
-| `collection` | `collection` | `language` |
-| `content_unit` | `content_unit` | `language`、`entry_role`、`air_date`（**没有 `duration`**） |
-| `expression` | `expression` | `language`、`duration`、`version_label`、`isrc`、`events` |
-| `release` | `release` | `catalog_number`、`barcode`、`isbn`、`edition_date`、`edition_type`、`edition_batch`、`country`、`publisher`、`packaging`、`distribution_channel`、`platform`、`attachments`、`store_bonuses`、`events` |
-| `medium` | `medium` | `catalog_number`、`format`、`role` |
-| `track` | `track` | `duration`、`role` |
-
-表中只列 `attributes` 的字段码。`title`（**任何 kind 必填**）、`original_language`、`translations`、`types`、
-`attributes`、`external_ids`、`pictures`、`status`、`position`、`number` 是所有 kind 共用的实体字段，
-不写在 `attributes` 里；`updated_at`、`created_by`、`redirect_id` 只读。
-结构性引用字段（`work_id` / `content_unit_id` / `release_id` / `medium_id` / `parent_id` / `contents` / `subjects`）
-按 kind 归属，见 [API 载荷模板](reference-api-templates.md)。
+表中只列 attributes 的字段码。title、original_language、translations、attributes、external_ids、pictures、status、position、number 是共用实体字段；结构引用按 kind 归属，见 [载荷模板](reference-api-templates.md)。created_by、updated_at、redirect_id 是只读投影。
 
 两个易错点：
 
 - `duration_source` 是 **entity 字段且只能指向 `expression`**；`publisher` 是 entity 字段且只能指向 `agent`
   （不能指向 release 自己的文本名）。entity 字段要求目标实体**存在、kind 相符、对当前用户可见且未 deleted/merged**。
-- `tags` 只出现在 10 个 work 类型上；**release / medium / track / content_unit / expression / collection / agent 都没有
-  `tags`**。想表达"初回盘""活动限定""某店特典"这类事实时不要往 Release/Medium/Track 塞 tags，改用
-  `edition_type` / `edition_batch` / `attachments` / `store_bonuses`，或按模型缺口上报。
+- `tags` 是八种实体共通的自由标签，不是受控业务分类，也不能单独证明实体身份。版本类别、发行批次、同梱物和店铺特典仍优先写到 `edition_type` / `edition_batch` / `attachments` / `store_bonuses`；标签不能代替这些结构化事实。
 
 ## 词表全量（写入用词项代码，显示名由前端本地化）
 
@@ -128,7 +95,7 @@
 
 ### `tags`
 
-**纯字符串数组**（不是对象、不是词项码）：`["动画","剧场版"]`。只有 10 个 work 类型有该字段。
+**纯字符串数组**（不是对象、不是词项码）：`["动画","剧场版"]`。当前种子允许八种 kind 写该字段。
 `GET /api/catalog/tags` 是对它的频次聚合，不是可写的字典表。
 
 ### `locator`
@@ -163,12 +130,19 @@
 
 ## `external_ids`
 
-键必须来自 `GET /api/catalog/external-databases` 的预设（当前 35 个码），未注册的键报
-`invalid_external_id`。预设带 `category`（`all` / `work` / `release` / `agent`）与校验正则，常见三条：
+键必须来自 `GET /api/catalog/external-databases` 的实际返回；外部库可由后台扩展，不以固定数量为准。未注册的键报
+`invalid_external_id`。预设带 `category`（`all` / `work` / `release` / `agent`）与校验正则，常见四条：
 
+- `official_website`：**存完整 URL**（`url_pattern` 是 `{id}`，值本身就是跳转链接，不做拼接），
+  校验只要求合法 http(s) URL；`category=all`，work / release / agent 等都可写；
 - `musicbrainz`：36 位 UUID（同一码被 work / release-group / recording 复用，**无语义区分**）；
 - `bangumi`：纯数字；
 - `isrc`：12 位码（独立码）。
+
+**官网是"外部资料"面板的正式字段，不是只进 `sources` 的旁证。** 核到作品 / 发行 / 主体的官方站点后，
+除按来源策略在 `sources` 记录它，还要把它写进 `external_ids.official_website`：前端按 `sort_order`
+把官网排在面板首位并做"官方"高亮。只留在 `sources` 里页面不会出现任何官网入口——
+症状是"条目有 Wikipedia / Bangumi / Steam，却没有一条官方链接"。
 
 `steam` 预设的 category 是 `work`：写到 release 上会 400 `invalid_external_category`。
 `?q=` 检索会返回 draft 实体，但 entity 型字段的引用校验要求目标可见，容易写出"看似存在却写不进去"的载荷。
@@ -177,8 +151,7 @@
 
 | 现象 | 错误码 | 改法 |
 | --- | --- | --- |
-| 未声明 `types` 却写属性 | `unknown_field: <码>` | 补该 kind 的同名类型码，或删掉该属性 |
-| 类型码不属于本 kind / 已禁用 | `invalid_type: <码>` | 用 `document.types` 里 `kinds` 含本 kind 的码 |
+| 字段不适用于本 kind | `unknown_field: <码>` | 检查 `document.fields[码].applicable_kinds` 与当前实体 kind，不通过选择模板扩大白名单 |
 | 枚举值不在词表 | `invalid_term`（可能带字段前缀） | 用词项代码，不提交显示名 |
 | 组字段写了未声明的子键 | `unknown_field: <键>`（可能带前缀如 `locator: `） | 只写本文列出的子字段 |
 | `locator` 有子字段无锚点 | `anchor_required: relative_to` | 补 `relative_to` |

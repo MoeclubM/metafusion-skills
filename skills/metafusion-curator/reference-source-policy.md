@@ -13,11 +13,12 @@
 
 | 字段或结论 | 默认等级 | 升级/通过条件 |
 | --- | --- | --- |
-| `kind`、`types`、父级作用域、`subjects` / `contents` 的发行归属 | CORE-P1 | 官方作品/产品/目录/TOC/版次记录；P2 只能给候选，不能据此新建、合并或计数 |
+| `kind`、内容身份、父级作用域、`subjects` / `contents` 的发行归属 | CORE-P1 | 官方作品/产品/目录/TOC/版次记录；P2 只能给候选，不能据此新建、合并或计数 |
 | 基础 `title`、官方版名、正式名称 | CORE-P1 | 官方作品页、产品页、发行目录或注册记录；译名不能代替正式题名 |
 | `translations[locale].summary` | CORE-P1 | 权利方/制作方的一手简介或官方新闻稿；翻译只能忠实转述，不得由模型扩写 |
 | `catalog_number`、`isbn`、`barcode` | CORE-P1 | 出版/发行方目录、官方商品页、授权销售渠道或官方注册记录，并逐字对应具体版次 |
 | `external_ids`、ISRC、平台 ID 等身份锚点 | CORE-P1（一旦用于身份/去重） | 官方平台、权利方或官方注册记录；解析到正确 kind、类型与作用域；Apple Music/iTunes 的 `collectionId`/专辑 ID 记录到 `external_ids.apple_music`，并核对具体音乐发行版 |
+| `external_ids.official_website` | CORE-P1 | 权利方/官方站点的官方主页本身（可点开、标题或正文自证官方）；只写完整 URL，不用渠道页、资讯站或搜索结果代替 |
 | `number`、`position`、`locator` 等目录/版次锚点 | CORE-P1（用于识别或去重时） | 官方目录、liner notes、字幕、包装或实物资料 |
 | `pictures` | 独立硬门 | 同时具备官方/权利方图像来源，以及覆盖本服务展示、复制或热链的明确许可/授权；音乐可使用 iTunes/Apple Music 官方图，但官方图源仍不替代复用授权；详见下文 |
 | 日期、`duration`、`language`、`copyright`、`tags`、`format`、`packaging`、`region` | AUX-P2 | 若用于区分、合并或去重，立即升级为 CORE-P1 |
@@ -41,7 +42,7 @@ P1 与 P2 冲突时，不让聚合站覆盖官方值；记录冲突并交人工�
 
 ## 封面与图片权利证据包
 
-`Picture` 只有 `url`、`caption`、`taken_at` 和 `source`；`Source` 只有 `kind`、`citation`、可选 `url`。DTO 没有 `asset_id`、许可类型、授权范围或期限。**官方 URL 只证明图源，不自动授权 FindVerse 复用。**
+`Picture` 包含 `url`、`caption`、`source` 和可选 `taken_at`、`version_label`、`usage_period`、`role`、`asset_id`；`Source` 包含 `kind`、`citation`、可选 `url`。`asset_id` 连接存储资产，`usage_period` 记录图片用于实体的事实时段，两者均不证明版权许可。DTO 没有许可类型、授权范围或授权期限。**官方 URL 只证明图源，不自动授权 MetaFusion 复用。**
 
 封面进入可计完整状态前，另存审查证据包，至少包含：
 

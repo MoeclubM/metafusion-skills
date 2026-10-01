@@ -44,7 +44,7 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
 
 | kind | 允许的归属字段（出现在实体上的结构性引用） | 备注 |
 | --- | --- | --- |
-| `agent` | 无 | 只有 `types`（person / organization / group / character 等） |
+| `agent` | 无 | 责任主体事实依实际字段、关系与来源表达 |
 | `collection` | 无 | 聚合靠 `includes` 关系 |
 | `work` | 无 | 创作署名走关系，不写字段 |
 | `content_unit` | `work_id`、`parent_id` | `parent_id` 只能指向同一 Work 的目录项 |
@@ -55,28 +55,9 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
 
 放错 kind 引用字段返回 `invalid_structural_field`；缺归属返回 `parent_required`。
 
-## 每个示例都带 `types`，这不是装饰
+## 动态属性字段
 
-`attributes` 的可写字段 = 该实体声明的 `types` 的字段并集：**不声明 `types` 时任何属性键都会被
-`400 unknown_field` 拒**，类型码的 `kinds` 不含本 kind 则 `invalid_type`。
-下面每个 kind 的示例都带 `types`，照抄即可；类型码清单、逐 kind 字段表与结构化字段形状见
-[类型码、字段白名单与结构化字段](reference-types-and-fields.md)。
-
-## 种子默认字段码（动态字段写在 `attributes` 下）
-
-下表是种子定义的默认字段码，**仅作对照**：目标实例的已发布 definitions 可能已被管理员扩展或调整，
-提交前一律以 `GET /api/catalog/definitions` 为准，未声明的码不要写。
-
-| kind | 种子字段码 |
-| --- | --- |
-| work | 公共字段 `language`、`edition_date`、`copyright`、`imdb`、`tags`、`infobox`、`events`，再按 `types` 追加：音乐类 `duration` / `duration_source` / `author`；小说 `volume_count` / `magazine` / `author`；动画 `episodes` / `platform` / `broadcast_start` / `broadcast_weekday` / `broadcast_end` / `air_network`；电影 `duration` / `platform`。work 共有 **10 个类型码**（`album` / `song` / `music` / `animation` / `film` / `novel` / `visual_novel` / `indie_game` / `photobook` / `personal`），逐码字段表见 [类型码、字段白名单与结构化字段](reference-types-and-fields.md) |
-| collection | `language` |
-| agent | 种子类型（`person` / `organization` / `group` / `character`）**没有任何字段**，`attributes` 必须为空 |
-| content_unit | `language`、`entry_role`、`air_date`（**没有 `duration`**） |
-| expression | `language`、`duration`、`version_label`、`isrc`、`events` |
-| release | `catalog_number`、`barcode`、`isbn`、`edition_date`、`edition_type`、`edition_batch`、`country`、`publisher`、`packaging`、`distribution_channel`、`platform`、`attachments`、`store_bonuses`、`events` |
-| medium | `catalog_number`、`format`、`role` |
-| track | `duration`、`role` |
+当前 Entity 不包含 types；可写属性取当前 `document.fields` 中 `applicable_kinds` 包含本 kind 的字段。展示模板和自由标签不改变可写范围。字段白名单、词表与结构化字段只维护在 [字段适用层级与结构化字段](reference-types-and-fields.md)，本页只给载荷示例。
 
 注意两点易错项：
 
@@ -92,7 +73,6 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
         "kind": "agent",
         "title": "新海诚",
         "original_language": "ja",
-        "types": ["person"],
         "attributes": {},
         "translations": {
           "ja": {"title": "新海誠"},
@@ -114,7 +94,6 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
         "kind": "work",
         "title": "秒速5厘米",
         "original_language": "ja",
-        "types": ["animation", "film"],
         "attributes": {"tags": ["动画", "剧场版"]},
         "external_ids": {},
         "pictures": [
@@ -137,7 +116,10 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
     }
 
 - `title` 是基础题名，`original_language` 声明它属于哪个语种；原语言题名放在对应 locale 的 `translations` 行里。
+- `external_ids` 的键必须来自实例预设；作品/发行/主体的官方站点用 `official_website` 记**完整 URL**
+  （前端"外部资料"面板据此渲染官网入口并排在首位），核到官网就不要让它留在空对象里。
 - `pictures[].url` 必须是绝对 HTTP(S) 地址：相对路径（如 `/assets/covers/x.webp`）会被拒绝为 `invalid_picture`。示例只展示 DTO；实际提交前必须另有权利 sidecar 证据包，官方图源不自动授权复用，缺明确许可时不得使用或计数。
+- 图片可带 `version_label`（多语言）、`usage_period: {begin?, end?}`（至少一端非空）、`role`（启用的 `picture_role` 词表码）与 `asset_id`（存储资产 UUID）；使用时段不表示版权期限。数组首项是手动封面，`taken_at` 不决定排序。自托管图片先完成 `cover_image` 绑定，再写 `asset_id` 并回读，流程见[文件上传与绑定](reference-file-upload.md)。
 - **不要**提交顶层 `cover_aspect` / `cover_image_url`：它们不在写入 DTO 里，严格解析会直接 `400 invalid_payload`。
 
 ## content_unit
@@ -145,7 +127,6 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
     {
       "entity": {
         "kind": "content_unit",
-        "types": ["content_unit"],
         "work_id": "<work-uuid>",
         "title": "第 1 话：樱花抄",
         "number": "1",
@@ -170,7 +151,6 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
     {
       "entity": {
         "kind": "expression",
-        "types": ["expression"],
         "work_id": "<work-uuid>",
         "content_unit_id": "<content-unit-uuid>",
         "title": "第 1 话 正片母版",
@@ -195,7 +175,6 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
     {
       "entity": {
         "kind": "release",
-        "types": ["release"],
         "title": "日本官方初版蓝光",
         "original_language": "ja",
         "subjects": [
@@ -238,7 +217,6 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
     {
       "entity": {
         "kind": "medium",
-        "types": ["medium"],
         "release_id": "<release-uuid>",
         "title": "Disc 1",
         "position": 1,
@@ -263,7 +241,6 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
     {
       "entity": {
         "kind": "track",
-        "types": ["track"],
         "medium_id": "<medium-uuid>",
         "title": "第 1 话：樱花抄",
         "position": 1,
@@ -318,10 +295,10 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
       "sources": [{"kind": "url", "citation": "官方说明", "url": "https://example.org/about"}]
     }
 
-- 关系码与允许的两端 kind / 业务类型来自 `GET /api/catalog/definitions` 的 `document.relations`，
+- 关系码与允许的两端 `source_kinds` / `target_kinds` 来自 `GET /api/catalog/definitions` 的 `document.relations`，
   只使用其中 `enabled` 的条目；关系码清单只从 `document.relations` 取。
   种子关系码的方向、端点与属性字段见 [关系码、方向与属性](reference-relations.md)。
-- 种子关系允许 9 个属性字段，实例可通过已发布定义增改：`role`、`credit_role`、`character_rank`、`character`（entity → `agent`）、
+- 种子关系允许 9 个属性字段，实例可通过当前定义增改：`role`、`credit_role`、`character_rank`、`character`（entity → `agent`）、
   `context`（entity → `work`\|`content_unit`\|`expression`\|`release`）、`language`、`begin_date`、`end_date`、`scope`。
 - 服务端拒绝自环（`invalid_endpoints`）与 acyclic 成环（`relation_cycle`；检测只在同一关系码的边集内）；
   **反向边是否判重由目标实例定义的 `symmetric` 决定**；种子 29 条全非 `symmetric`。
@@ -336,7 +313,7 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
 - `/api/catalog/entities/{id}/relations`（关系与对端实体）；
 - `/api/catalog/entities/{id}/occurrences`（表达/内容单位的反向收录）；
 - `/api/catalog/entities/{id}/revisions`（本次修订快照与证据；行里只有写后 `snapshot`，**没有 `before`/`after`**）；
-- 发行对比用 `/api/catalog/compare?ids=<id1>,<id2>`。
+- 实体对比用 `/api/catalog/compare?ids=<id1>,<id2>`，返回 `items[].entity` 与 `items[].children`；发行/载体的子项形状是 `{medium, tracks}`，其他 kind 的 `children` 为空。
 
 核对返回的 ID、归属（work / release / medium）、`position`、翻译回退、`pictures` 与 revision 内容是否与预期一致。
 收到 409 `version_conflict` 时先回读再决定是否重放；响应不明时先查状态，不要盲目重试创建或自动删除已成功的数据。
@@ -344,5 +321,5 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
 ## 迁移与导入
 
 `POST /api/importer/preview` 与 `POST /api/importer/import`（**前缀是 `/api/importer`，不是 `/api/catalog/importer`**）
- 是 Bangumi 预览与按证据导入路径；
+ 是按来源适配器预览与按证据导入路径；先读 `GET /api/importer/sources` 核实实例可用来源。本地适配器种子目前为 bangumi/dlsite/dmm，外部库 GUI 注册新码不会自动实现抓取适配器；
 需要逐项审查、失败可恢复与可追溯修订时，使用上面的实体与关系端点。

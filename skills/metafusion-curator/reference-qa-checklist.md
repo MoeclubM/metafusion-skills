@@ -5,9 +5,9 @@
 
 ## 身份与查重
 
-- [ ] 已按 kind + 原题名、原文题名、别名、条码、品番和外部 ID 查重，且核对了 **`types` + 父级作用域**（同名同 kind 但类型码不同是两个实体，如电影本体与其 OST 专辑）。
+- [ ] 已按 kind + 原题名、原文题名、别名、条码、品番和外部 ID 查重，且核对了 **父级作用域、实际内容与身份锚点**（同名同 kind 不证明同一对象，如电影本体与其 OST 专辑）。
 - [ ] 已证明这是新的 Work，或明确说明为何复用已有 Work。
-- [ ] Work 题名没有季数、卷号、盘号、规格、画质、音质、包装、出版社或字幕组污染。
+- [ ] Work 题名没有额外拼入发行盘号、规格、画质、音质、包装、出版社或字幕组；正式题名中的季数、卷号、OST 等词按官方创作身份保留，没有机械删词。
 - [ ] 别名和外部 ID 没有把另一版本伪装成独立创作实体。
 - [ ] 责任主体落在 `agent`（没有沿用旧的 `artist` / `franchise` 实体名）。
 
@@ -16,11 +16,11 @@
 - [ ] `content_unit` / `expression` 属于正确 Work；`content_unit` 的 `parent_id` 指向同一 Work。
 - [ ] `expression` 没有误填 `parent_id`（该 kind 只允许 `work_id` 与 `content_unit_id`）。
 - [ ] `medium` 属于正确 Release，`track` 属于正确 Medium；曲序与包装一致。
-- [ ] 每个实体都声明了正确的 `types`（`attributes` 的每个键都在该实体 types 的字段并集里；`agent` 的 `attributes` 为空；不声明类型就只能写空 `attributes`）。
+- [ ] `attributes` 每个键的当前启用字段 `applicable_kinds` 包含实体 kind，字段值通过其词表/引用/子组约束；请求没有已移除的实体 `types`。tags 可跨八类使用，但不作为同一性证明。
 - [ ] `release` 上没有 `work_id`，且 `subjects` **覆盖了它实际收录表达的全部 Work**。
-- [ ] `subjects[].role` 取自 `release_role` 词表（`primary` / `compilation` / `supplement`），
+- [ ] `subjects[].role` 取自 `release_role` 词表（码以目标实例实际返回为准），
       同一 `(work_id, role)` 没有重复。
-- [ ] `track.contents` 的 `expression_id` 都真实存在且可见；`contents` 数组内 `position` 不重复（这是 `duplicate_position` 唯一管的范围；同一 medium 下兄弟 track 的 position 服务端不做唯一校验，不要当成错误去“修复”）。
+- [ ] `track.contents` 的 `expression_id` 都真实存在且可见；数组内 `position` 不重复。另按官方曲目/章节顺序复核同一 Medium 的 Track 顺序：服务端没有唯一约束不能证明排序正确；发现重复时先核来源，再作已授权的纠正。
 - [ ] 同一 Expression 在同一 Track 的多次出现确实对应不同 locator（相同 expression + 相同 locator 属重复收录）。
 - [ ] 字段名只用当前 DTO 的：单内容引用走 `contents`、发行版名用 `title`、封面走 `pictures`。
 - [ ] 文件哈希、对象键与下载地址位于存储服务，没有污染题名或动态字段。
@@ -36,10 +36,10 @@
 
 - [ ] 关系类型取自 `GET /api/catalog/definitions` 的 `relations` 且处于启用状态
       （关系码清单只从 `definitions` 的 `document.relations` 取）。
-- [ ] source / target 实体真实存在，且各自的 kind 与业务类型在该关系允许范围内。
+- [ ] source / target 实体真实存在且可见，各自的 kind 在该关系的 `source_kinds` / `target_kinds` 允许范围内。
 - [ ] 没有自环、错误反向边或把同一人物拆成多个实体。
 - [ ] 同一对实体的同类多边用 `attributes` 区分（如声优多角色用不同 `character` 的多条 `voiced_by`）；**只改 `position` 无效**，会撞唯一索引报 `constraint_violation`（`position` 不在服务端去重键里）。
-- [ ] 需要双向语义时建了两条边（反向边不自动判重：当前定义全非 `symmetric`，不要把“没见到拒绝”当成判重）。
+- [ ] 已核对关系的正反显示名与 `symmetric`：同一事实从对端展示不需要另建反向边；只有证据支持另一条独立事实时才新增关系，不能因服务器允许反向边就重复或倒置语义。
 - [ ] 声明为 acyclic 的层级关系没有闭环；大出度或并发写入场景下只声明"局部已核验"。
 
 ## 翻译与封面
@@ -51,16 +51,19 @@
 - [ ] 标签、角色、关系类型、载体格式等代码来自 definitions / 词表，没有硬编码术语。
 - [ ] `pictures[].url` 是绝对 HTTP(S) 地址（相对路径会被判 `invalid_picture`），`source` 指向并说明具体图源；另有权利 sidecar 证据包，明确授权方、被授权方、用途、地域、期限、展示/复制/热链范围及证据，`rights_review=passed`。官方来源、`pictures[].source` 或普通 `sources` 本身不构成授权；缺许可时留空、报告并禁止计数。无占位图、拉伸、裁切伪装或水印。
 - [ ] 画幅比例若写入，位于实例定义声明的字段下；没有提交顶层 `cover_aspect`。
+- [ ] 图片数组顺序与手动封面一致，没有按 `taken_at` 或 `usage_period` 自动重排；URL 不重复且总数不超过 40。`role` 是启用的 `picture_role` 码；自托管 `asset_id` 已与存储资产及 `cover_image` 绑定回读核对，使用时段没有被当成许可期限。
 - [ ] 动过定义/货架/外部库名称的：`names` 四语齐备（`zh-CN` / `zh-TW` / `en-US` + `ja` 或 `ja-JP`），否则 `four_locale_names_required`（这是 `names`，与实体 `translations` 两套形状）。
 
 ## 证据、当前版本、并发与写后验证
 
 - [ ] 已按[字段级来源策略](reference-source-policy.md)把核心字段映射到 CORE-P1；P2/Wiki 只作辅助或发现，没有用来满足核心、合并或计数门槛。
+- [ ] 核到官网的作品/发行/主体没有把官网只留在 `sources`：`external_ids.official_website` 已落**完整 URL**（前端"外部资料"面板的官网入口只读这里），且键与实体 kind 相容（`category=all`）。
 - [ ] 每次变更都有具体 `edit_note` 和至少一个 `sources` 项，`citation` 明确列出所支持字段；`self` 只可描述没有新增外部断言的维护/清理说明，不能支撑任何字段值。
 - [ ] 当前实体与 `revisions` 已回读，资格只取 `revision.version == entity.version`；历史修订、已失效来源、站内旧值和搜索摘要没有补当前核心证据。
 - [ ] 更新前已 GET 完整实体并带回所有未修改的可写字段（PUT 是整实体替换，不是局部 PATCH）；写后再次 GET 完整实体逐字段比对，而非只信 200 响应。
 - [ ] 更新带了正确的 `expected_version`；409 `version_conflict` 时先回读、确认并发修改内容，再决定是否基于新版本重做，禁止自动/盲重放。
 - [ ] 创建的 `Idempotency-Key` 绑定唯一操作与原载荷；同键同载荷才重放，`409 idempotency_conflict` 未被误当成重放成功。
-- [ ] 已重新读取实体、`relations`、`occurrences` 与 `revisions`，并核对当前修订 `snapshot`、编辑者、定义版本与来源，确认未请求修改的数据没有丢失（`revisions` 没有 before/after）。
+- [ ] 已重新读取实体、`relations`、`occurrences` 与 `revisions`，并核对当前修订 `snapshot`、编辑者、实体版本与来源，确认未请求修改的数据没有丢失（`revisions` 没有 before/after 或定义版本字段）。
+- [ ] 动过 definitions 的：已检查 `/api/admin/catalog-definitions/impact` 并用当前 `expected_etag` 保存完整文档，保存后回读新 `etag` 与内容；没有把 `etag` 当历史版本或假设服务端保存草稿、发布与回滚。
 - [ ] 没有声称这些接口提供跨实体全量 ACID、字段级 provenance、封面许可字段或全库 DAG 证明；结论限定在本次写入与已复核局部。
 - [ ] 报告将结果归类为通过、需补证据、需修正或实现缺口，并列出实体、字段、当前版本、来源等级与 `count_eligible`。
