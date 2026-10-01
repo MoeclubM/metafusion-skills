@@ -5,172 +5,48 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
 
 # MetaFusion 编目与审查技能
 
-本技能把考据结论安全地落到 MetaFusion 的当前数据模型中。它支持读操作、审查和已获授权的写操作，
-不替用户扩大写入范围，也不为绕过服务端约束而直接修改数据库。
+本技能处理目录数据的读取、编目与审查；写入限于用户已授权的实例和对象。开发、部署与真实数据操作是不同范围。
 
-## 先确认运行时口径
+## 先确认目标与契约
 
-1. 目标实例统一使用 `/api`；版本或端点不明时不要尝试写入。
-2. 先读 [API 行为参考](reference-api-behavior.md) 与 [API 错误码与修复动作](reference-api-errors.md)，再核对实例的 `GET /api/openapi.json`、`GET /api/catalog/definitions` 和当前用户角色。示例字段不能代替运行时验证。
-3. 按使用目标做契约核验：
-   - **线上实例**：直接检查用户提供或已确认的实例 URL 的 OpenAPI 与 definitions；写入前确认该实例、身份与权限。
-   - **本机源码服务**：先检查 `scripts/verify_api_contract.py` 是否存在，读取其 `--help` 并使用明确的本地 base URL。不要凭记忆执行，也不要把源码/仓库内容扫描当作运行时核验。
-4. 技能资料与目标实例不一致时，记录实际 URL、核验时间和差异；暂停有风险的写入。被拒后按错误码修正，不猜字段或绕过接口改库。
+- 目标实例统一使用 `/api`。先核对 `GET /api/openapi.json`、`GET /api/catalog/definitions`、目标实体和调用者权限；版本或身份不明时停止依赖写入。
+- [API 行为参考](reference-api-behavior.md)记录载荷与校验；参考页里的种子码表是对照，不是目标实例的当前配置。只有当前启用的字段、词表、关系码能用于写入。
+- 本机源码服务可使用仓库已有契约核验脚本；先检查路径与 `--help`，传明确本地 URL。源码扫描不能替代目标实例的运行时核验。
+- 技能与响应矛盾时记录 URL、核验时间与差异，并暂停受影响写入；不绕接口改数据库。
 
-## 本地调用
+## 按任务读取参考
+
+| 当前任务 | 优先读取 |
+| --- | --- |
+| 判断系统归属、权限与实体可见性 | [接口归属与写入范围](reference-endpoint-scope.md) |
+| 证明身份、核心字段、当前修订或封面权利 | [字段级来源与权利策略](reference-source-policy.md) |
+| 选择创作、篇目、表达、发行、介质与轨道层级 | [实体与层级数据模型](reference-data-model.md)；命名问题再读 [LRM 与发行版规范](../lrm-catalog-standards/SKILL.md) |
+| 填写动态属性、locator、附件或外部 ID | [字段适用层级与结构化字段](reference-types-and-fields.md) |
+| 建立署名、改编、聚合等关系 | [关系码、方向与属性](reference-relations.md) |
+| 准备 API 请求或处理拒绝 | [载荷模板](reference-api-templates.md)、[错误码与修复动作](reference-api-errors.md) |
+| 上传或绑定文件 | [文件上传与绑定](reference-file-upload.md) |
+| 写后复核、完整性审计或模型表达缺口 | [质量检查清单](reference-qa-checklist.md)、[模型缺口与扩展通道](reference-model-gaps.md) |
+
+按本次任务读取对应参考，不要求每次加载全部码表。共享事实只在对应参考维护，入口不另抄关系或字段全集。
+
+## 本地客户端与工具
 
 本机 Agent 可直接读写已忽略的 `local/credentials.json`，并用 `local/metafusion-api.mjs` 调用目标实例。令牌值不进入对话、日志、报告或提交；正常本地调用无需轮换凭据。任务直接复用这个客户端，不再按批次生成脚本；格式见 [本地凭据与通用客户端](local/README.md)。
 
-## 写入范围（只写目录）
+审计与合并等反复要用的只读/编辑动作，收敛在 [local/tools/](local/tools/README.md)（全站质量审计、层级合规、外部标识同一性、来源线索与并集合并）。**先看有没有现成工具，不要再按批次新写脚本**；合并默认 dry-run。工具输出只代表它实际检查的项目，不能代替来源核验或证明跨实体事务。
 
-编目写入只发生在**元数据目录**（`/api/catalog/*`、`/api/importer/*`）。其余前缀属于别的系统：
+## 编目决策与写入约束
 
-- **账号 auth**（`/api/setup`、`/api/auth/*`、`/api/admin/users*`、`/api/oauth/*`、`/api/oidc/jwks`）：
-  登录、会话、令牌与账号管理（个人访问令牌 PAT 也在这一侧创建与内省）。业务权限（谁能编辑哪个实体）仍由目录判断。
-  长期运行的 Agent 通常使用 PAT（`mfp_` 前缀）；本机默认从 `local/credentials.json` 读取，口径见 [接口归属与写入范围](reference-endpoint-scope.md)。
-  注意 `/api/admin/*` **不是整段归账号**：`/api/admin/catalog-definitions`、`/api/admin/shelves`、
-  `/api/admin/external-databases` 由目录服务提供（定义、货架、外部库管理）。
-- **互动 community**（`/api/community/*`、`/api/favorites/*`、`/api/users/{id}/favorites`、`/api/users/{id}/stats`、`/api/messages/*`）：
-  论坛、条目短评、收藏与私信。它们**不是**元数据事实，
-  不要通过目录接口写入，也不要为它们建实体。
-- **目录的其它只读入口**：`GET /api/exchange/entities/{id}`（导出快照）、
-  `POST /api/exchange/proposals`（外部提案，落 `pending_review`，不直接写实体）、
-  `GET /api/catalog/me/home-preferences`。它们不改变"编目写入只走目录"这条边界。
-- **存储 storage**（`/api/storage/*`）：物理文件、sha256、直传、绑定与下载。
-- **网关 gateway**：按前缀分流，前端调用点不因服务切换而改变。
-
-硬性规则：判定"实体是否存在 / 是否可见"必须问目录：`GET /api/catalog/entities/{id}`
-（非 200 一律按不存在处理），不要另建本地台账或缓存可见性结论。
-详见 [接口归属与写入范围](reference-endpoint-scope.md)。
-
-## 标准工作流
-
-### 1. 考据与查重
-
-- **核心字段只用 CORE-P1**：权利方、出版/发行/制作方、作者/艺人官方页、官方目录/产品页/新闻稿/press kit/字幕署名、官方 ISBN/ISRC/GS1 注册记录，或明确提供该具体版次数据的官方/授权销售渠道。音乐数字发行版的 Apple Music/iTunes 官方专辑页、接口和封面可作为该版次的 CORE-P1；其中的 `collectionId`/专辑 ID 记录为 `external_ids.apple_music`，并核对具体发行版。基础题名、正式版名、实体作用域、发行归属、核心简介、品番/ISBN/条码、用于去重的 external ID 与官方编号都属于核心；完整矩阵见[字段级来源、当前版本与封面权利策略](reference-source-policy.md)。
-- **P2/Wiki 只作辅助与发现**：MusicBrainz、Wikidata、Discogs、VGMdb、Bangumi、AniList、MAL、IMDb、TMDB、百科/社区站和 Wiki 可发现候选、交叉核对或记录辅助事实，但不得单独满足核心字段、实体边界、合并或计数门槛。日期、时长、语言、标签、格式及一般关系通常为辅助；一旦用于区分、合并、去重或身份/归属，关系边及两端立即升级为 P1。
-- 逐条打开来源，核对它实际支持的字段、作用域和具体版次；`citation` 明确列出所支持字段。URL 可访问、搜索摘要、站内旧值、模型记忆、另一条记录的转述或 `self` 都不是核心证据。来源冲突或无法核实时留空并标记“需补证据”，不得猜测或从相邻实体补造。
-- 审计只认 `revision.version == entity.version` 的当前修订，逐核心字段映射 P1；历史来源不补当前资格。服务端接受 `sources` 只证明 API 形状合格，不证明权威性或字段级 provenance。
-- 封面是独立硬门：同时核验官方/权利方图像来源，以及覆盖本服务展示、复制或热链的明确许可/授权，并另存权利证据包。音乐可使用 iTunes/Apple Music 官方图，数字发行版的官方专辑页可作为该版次的权威来源；官方 URL、`pictures[].source` 或普通 `sources` 都不自动授权。权利不明时留空、不使用、不计数。保持原图比例，不拉伸、不裁切伪装，不用水印、占位或未授权转载图。
-- 使用搜索和实体详情按原题名、原文题名、别名、条码、品番和外部 ID 查重
-  （`GET /api/catalog/entities?q=…`）。
-- 查重维度必须包含 **kind + 题名 + `types` + 父级作用域**：同名、同 kind 但类型码不同的实体是两回事
-  （电影《君の名は。》与它的 OST 专辑就同名同 kind）。只按题名复用，会把篇目、表达和合集挂到错的母体上。
-- 命中同一创作母体时复用 Work；缺少的是版本、容器、篇目或翻译就补相应层级。
-  只有证据显示为不同创作实体时才新建 Work。
-- 记录每个结论对应的来源。来源 URL 可访问只是最低条件，不能代替对内容的核对。
-
-### 2. 选择正确层级
-
-固定实体骨架是八类：`agent` / `collection` / `work` / `content_unit` / `expression` / `release` / `medium` / `track`。
-
-| kind | 应保存的事实 | 不应保存的事实 |
-| --- | --- | --- |
-| agent | 责任主体：个人、团体、机构、虚构角色 | 按单部作品重复创建主体 |
-| collection | 系列、企划、世界观等聚合枢纽 | 为作者个人作品全集硬建企划 |
-| work | 纯净创作母体、基础题名、创作主体、原始语言、作品级简介和标签 | 季数、碟号、卷号、分辨率、音质、出版社或包装 |
-| content_unit | 同一 Work 内的逻辑章、集、篇目**目录** | 专辑名、发行品番和具体盘号 |
-| expression | 可被多个发行复用的表达：母版、正片、录音、译本 | 把某个发行专属的版次信息写在表达上 |
-| release | 一个真实发行的版本信息（品番、条码、日期、包装）与 `subjects` | 挂到某一部作品的 `work_id` 下 |
-| medium | 发行内真实的盘、卷、文件集及其顺序与载体规格 | 作品目录树或没有来源的虚构盘片 |
-| track | Medium 内的物理位置项，及其 `contents` 收录的 Expression 与 locator | 把 Track 当作独立作品或当作目录层 |
-
-归属规则：`content_unit` / `expression` 必须有 `work_id`；`medium` 必须有 `release_id`；
-`track` 必须有 `medium_id`。`content_unit` 的 `parent_id` 只能指向同一 Work 的目录项，
-`medium` / `track` 的 `parent_id` 只能指向同一 Release / Medium；`expression` **没有 `parent_id`**。
-**`release` 没有 `work_id`**：被其载体实际收录表达的 Work 全部经 `subjects` 声明。
-
-**每个实体都要声明 `types`**；它决定 `attributes` 的可写字段。字段白名单、错误码与载荷形状见[类型码、字段白名单与结构化字段](reference-types-and-fields.md)。
-
-### 3. 清洗题名与分离规格
-
-Work 题名只保留能辨识创作母体的主名。将 TV、OVA、剧场版、Season、Vol、S1、4K、1080p、FLAC、
-OST、初回限定、BOX 等修饰信息移到有证据的 Release、Medium、Track 或标签/关系中。
-遇到"卷"或"季"本身是独立创作实体的来源，先判断实体边界，再决定是否新建 Work；不要机械套黑名单。
-
-Release 命名要能区分真实版本，优先使用来源中的官方版名，并把条码、品番、包装、日期和发行者放入对应字段。
-不要为了填满层级而捏造"网络连载版""TV Broadcast"或空壳发行版。
-
-### 4. 维护内容目录与发行载体
-
-- 先创建或复用 Work，再创建属于它的 `content_unit` 目录；章节、分集和附录用 `parent_id`、`position`、`number` 表达。
-  `number` 保留官方原文（`A1`、`EX` 这类不要改写成整数），`position` 只表示排序。
-- 需要跨发行复用时补 `expression`；它是"收录到 Track 上的那一层"。
-- 有真实发行证据时创建 Release，在 `subjects` 中声明该发行收录的**全部** Work 及 `role`
-  （`primary` / `compilation` / `supplement`），再按实际包装建立 Medium 和 Track。
-- `track.contents` 是唯一收录来源，项为 `{expression_id, position, locator}`；
-  `locator` 保存页码、章节、时间段或路径。整轨收录允许 locator 为空；
-  有其它定位子字段时必须给 `relative_to` 锚点。
-- **多作品盒装是受支持能力**：在 `subjects` 声明载体实际收录的各个 Work；只有来源证明汇编本身是独立创作母体时才另建汇编 Work。
-  不要把盒装品番挂到其中一部作品，也不要用伪造 `work_id`、直接 SQL 或改触发器绕过
-  `undeclared_release_subject` 校验。
-
-### 5. 写入、审计与权限边界
-
-- 写入前验证当前用户确有目标 API 的权限；读操作和审查不需要把结果写回系统。
-- 创建用 `POST /api/catalog/entities`（`expected_version` 为 0、`entity.id` 留空），
-  更新用 `PUT /api/catalog/entities/{id}`。**PUT 是整实体替换**：先 GET 完整实体，只改需要改的字段，
-  其余字段原样带回。
-- **发布通过 PUT 写 `status: "published"`；`lifecycle` 只用于管理员合并与停用，不可用于发布。**状态转换、请求体与错误码见 [API 行为参考](reference-api-behavior.md)。
-- **退回走下架端点**：已发布条目只能通过 `POST /api/catalog/entities/{id}/unpublish` 回到 `draft`；普通 PUT 不可降级。其他生命周期细节见 [API 行为参考](reference-api-behavior.md)。
-- 每次写入都必须提供具体 `edit_note` 与至少一条 `sources`；来源只属于修订信封，不能据此宣称字段级证据合格。格式与错误码见 [API 载荷模板](reference-api-templates.md)。
-- 创建实体与创建关系用 `Idempotency-Key`：持久 24h，同操作/用户/键且载荷相同才重放首次结果；同键异载荷返回 `409 idempotency_conflict`。更新与删除用 `expected_version`；409 后必须回读、比对并由调用方决定是否重做，禁止盲重放。细节见 [API 行为参考](reference-api-behavior.md)。
-- 关系写入只使用 `GET /api/catalog/definitions` 中 `enabled` 的关系码与允许的两端 kind / 业务类型，
-  经由 `POST /api/catalog/relations`、`PUT` / `DELETE /api/catalog/relations/{id}`。
-  **删除关系必须在 body 里带 `expected_version`**，与 `edit_note` / `sources` 同体，否则 409 / 400。
-  关系码的方向、属性字段与端点限制见 [关系码、方向与属性](reference-relations.md) 的种子快照，实际以目标实例已发布定义为准；
-  不要把来源名称直接写成 agent ID，也不要为同一个角色拆出重复实体。
-
-### 6. 写后验证
-
-重新读取目标实体、`relations`、`occurrences`、`revisions`（必要时用 `/api/catalog/compare?ids=…`），确认：
-
-- Work 归属、纯题名和查重结果正确；
-- `work_id` / `release_id` / `medium_id`、`parent_id`、`position` 与 `contents` 引用没有越界；
-- 每个发行的 `subjects` 覆盖了实际收录表达的全部 Work；
-- 翻译能按请求语言 → en-US → original_language → 基础字段回退；
-- 封面 URL、图片比例和来源符合实例规则；
-- 服务器实际返回的当前 revision、来源与报告一致；`revision.version == entity.version`，未请求修改的数据没有丢失。
-
-关系审查要检查自环、启用状态、端点类型、反向边语义和层级边的长路径。请求成功不等于全库 DAG 已证明；
-请把结论限定在已复核的局部，并把并发限制或遍历截断作为实现风险报告，而不是默认为安全。
-
-## 文件与存储
-
-作品/发行的文件本体不属于元数据。文件走存储服务：`POST /api/storage/upload/initiate`（命中 sha256 即秒传）
-→ 预签名分片直传或 `PUT /api/storage/upload/stream/{asset_id}` → `POST /api/storage/bind` 用 `binding_role`
-表达用途。读取可见性是**上传者或任一绑定目标可见即可读**，下载、预览与哈希校验共用同一判定。
-不要把哈希、对象键或下载地址写进实体字段。详见 [文件上传与绑定](reference-file-upload.md)。
-
-## 多语言与封面约束
-
-- 所有实体的 `translations` 都是**对象**：`{"zh-CN":{"title","summary","aliases"}}`；数组形状会被拒收。
-- 关系类型、角色、载体格式、包装和标签的显示名来自 `GET /api/catalog/definitions` 与其词表，
-  前端不新增硬编码术语。
-- 定义、货架、外部库的 `names` 必须**四语齐备**（`zh-CN`、`zh-TW`、`en-US`，加 `ja` 或 `ja-JP`），
-  否则 `four_locale_names_required`；它与实体的 `translations` 是两套形状。
-- `attributes.tags` **只有 10 个 work 类型有**：release / medium / track / content_unit / expression /
-  collection / agent 写 tags 一律 `unknown_field`，版本与包装信息请用各自字段承载。
-- 封面走 `pictures: [{url, caption:{locale:说明}, source:{kind,citation,url?}}]`；
-  `url` 必须是绝对 HTTP(S) 地址。不要在实体顶层写 `cover_aspect` / `cover_image_url`——它们不在写入 DTO 里，
-  严格解析会直接 400。画幅比例若实例定义声明了对应字段，放在 `attributes` 下。
-- 封面只有在官方/权利方图源与明确复用许可/授权两项均通过时才可使用并计数；证据包字段与 `rights_review` 见[字段级来源、当前版本与封面权利策略](reference-source-policy.md)。
+- 按 **kind + 原题名/别名 + 父级作用域 + 已核验的内容身份**，辅以官方编号、条码、外部 ID 与实际关系查重。标签只作线索，同名不证明同一对象；复用独立歌曲 Work 和录音 Expression，避免按专辑重复建歌。
+- 核心字段与身份结论须逐字段 CORE-P1；P2/Wiki 用于发现与辅助。来源策略、当前版本资格和封面权利沿用对应参考，不用站内旧值、搜索摘要或模型记忆补证。
+- 核到官网后，除记录 `sources`，还将完整 URL 写入 `external_ids.official_website`；前端官方链接读取此字段。没有可核实官网就留空，不用渠道页代替。
+- 创作目录与发行承载分开；Release 的 `subjects` 覆盖 Track 实际收录 Expression 的全部 Work。结构归属用固定字段，语义关系与属性使用目标实例的当前生效 definitions。
+- 编目事实只写目录；互动走 community、文件走 storage，定义管理须在已授权范围内。实体可见性与引用有效性以目录读接口为准：404 表示当前调用者不可读取该对象，不能据此断言全库不存在；401/403、429、5xx 或网络失败均为未知，停止依赖写入。
+- PUT 是整实体替换：先 GET，保留所有未修改的可写字段，携带 `expected_version`。409 后回读和比对，不盲重放。创建使用唯一 `Idempotency-Key`，同键只能重放原载荷。
+- 每次写入提供具体 `edit_note` 与 `sources`；服务端接受证据信封不证明字段级权威性。发布、下架、合并与停用依 [API 行为参考](reference-api-behavior.md)选择端点和权限。
+- 写后回读实体、当前修订、关系与 occurrences，逐字段核对版本、来源、层级和未请求修改的数据；客户端的成功标志不能替代这一步。
+- 碰到缺字段或关系，先读实例 definitions 判断是否已有 GUI 扩展；确无落点则报告缺口，不借不符语义的标签、伪造归属或直接 SQL 填充。已获授权的定义管理可走后台 GUI 的编辑、影响检查与 `expected_etag` 保存流程，接口见[模型缺口与扩展通道](reference-model-gaps.md)。
 
 ## 审查结论格式
 
-报告按"通过 / 需补证据 / 需修正 / 实现缺口"分类。每项给出实体、字段、来源、影响和建议动作；
-把已验证事实与推测分开。发现架构无法表达目标事实时，不用近似数据填充，直接指出需要的模型或 API 变更。
-
-## 进一步参考
-
-- [API 行为参考](reference-api-behavior.md)：统一 `/api` 前缀、八类实体边界、翻译形状、写入校验与端点差异。
-- [字段级来源、当前版本与封面权利策略](reference-source-policy.md)：CORE-P1 / AUX-P2 / Wiki 边界、当前修订审计和封面授权证据包。
-- [API 错误码与修复动作](reference-api-errors.md)：常见拒绝码的含义与改法（证据 / 字段 / 词表 / 结构归属 / 关系 / 并发 / 权限）。
-- [接口归属与写入范围](reference-endpoint-scope.md)：哪些前缀属于编目、哪些不属于，以及"实体是否存在/可见"该问谁。
-- [文件上传与绑定](reference-file-upload.md)：内容寻址与秒传、预签名直传、`binding_role`、读取可见性口径。
-- [质量检查清单](reference-qa-checklist.md)：题名、层级、关系、封面和审计检查。
-- [API 载荷模板](reference-api-templates.md)：统一实体入口的字段与兼容路径的使用边界。
-- [类型码、字段白名单与结构化字段](reference-types-and-fields.md)：`types` 如何决定可写属性、逐 kind 字段表、词表全量、locator/attachments/infobox 的形状。
-- [关系码、方向与属性](reference-relations.md)：种子关系码的方向与端点、关系属性及多边与成环口径。
-- [实体与层级数据模型](reference-data-model.md)：跨媒介层级和表达复用原则、常见建模范式。
-- [模型缺口与上报路径](reference-model-gaps.md)：表达不了的事实清单、扩展 definitions 的正规通道。
+按“通过 / 需补证据 / 需修正 / 实现缺口”记录实体、字段、当前版本、来源、影响和建议动作；未执行标“未核验”。完整性与计数采用 [来源策略](reference-source-policy.md)的资格字段，不把工具的“0 问题”当成完整证明。关系长路径、并发与遍历截断只报告已验证范围。

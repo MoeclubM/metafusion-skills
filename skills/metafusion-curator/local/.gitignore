@@ -4,3 +4,7 @@
 !README.md
 !metafusion-api.mjs
 !metafusion-api.test.mjs
+# 可复用编目工具（mf-*），见 tools/README.md
+!tools/
+!tools/README.md
+!tools/mf-*.mjs
