@@ -55,6 +55,7 @@
 
 词表外的值一律 `invalid_term`（消息可能带字段前缀，如 `packaging: invalid_term`）。
 新版 `creation_form` 词项来自现有创作模板码及 song；不在本页复制清单，实际以实例启用词项为准。creation_form 可省略，不证明身份或限制其他字段可写性。
+模板自动选择只按显式 `match` 与 `priority`，并列时回到通用事实布局；缺少 match 的模板仅供手工选择，不按已填字段猜类别。显式 `match: []` 表示该 kind 的兜底条件。
 `country`、`platform`、`version_label`、`credit_role`、`scope`、`magazine` 是**自由文本**，不要当枚举填代码。
 
 ## 结构化字段的形状
