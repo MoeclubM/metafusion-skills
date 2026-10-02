@@ -15,6 +15,7 @@
 
 - [ ] `content_unit` / `expression` 属于正确 Work；`content_unit` 的 `parent_id` 指向同一 Work。
 - [ ] `expression` 没有误填 `parent_id`（该 kind 只允许 `work_id` 与 `content_unit_id`）。
+- [ ] 实例支持表达组合时，整本/整季与部分表达属于同 Work，关系顺序唯一、无环，且实际出版/光盘收录另有 Track.contents；未把直接组成投影当递归展平结果。
 - [ ] `medium` 属于正确 Release，`track` 属于正确 Medium；曲序与包装一致。
 - [ ] `attributes` 每个键的当前启用字段 `applicable_kinds` 包含实体 kind，字段值通过其词表/引用/子组约束；请求没有已移除的实体 `types`。tags 可跨八类使用，但不作为同一性证明。
 - [ ] `release` 上没有 `work_id`，且 `subjects` **覆盖了它实际收录表达的全部 Work**。
@@ -31,6 +32,7 @@
 - [ ] 多作品盒装的 `subjects` 覆盖实际收录表达所属的全部 Work；只有来源支持时才另建汇编 Work，没有伪造 `work_id` 或改库绕过校验。
 - [ ] 系列/企划世界观用 `collection` + `includes` 表达，没有为作者个人作品全集硬建企划。
 - [ ] 没有从卷数、盘数或发行数量推造未被来源证明的 `content_unit` / `expression`。
+- [ ] 版本组依据来源显式建立，未从共享 subjects/录音或商品格式推断；release_group 用途跨码共用一个发行最多一组，普通/限定/地区内容按实物分别登记。
 
 ## 关系图
 
@@ -38,9 +40,10 @@
       （关系码清单只从 `definitions` 的 `document.relations` 取）。
 - [ ] source / target 实体真实存在且可见，各自的 kind 在该关系的 `source_kinds` / `target_kinds` 允许范围内。
 - [ ] 没有自环、错误反向边或把同一人物拆成多个实体。
-- [ ] 同一对实体的同类多边用 `attributes` 区分（如声优多角色用不同 `character` 的多条 `voiced_by`）；**只改 `position` 无效**，会撞唯一索引报 `constraint_violation`（`position` 不在服务端去重键里）。
+- [ ] 同一对实体的普通同类多边用 `attributes` 区分（如声优多角色用不同 `character`）；只改 position 仍重复。表达组合中相同部分即使换码/属性也不重复建边。
 - [ ] 已核对关系的正反显示名与 `symmetric`：同一事实从对端展示不需要另建反向边；只有证据支持另一条独立事实时才新增关系，不能因服务器允许反向边就重复或倒置语义。
 - [ ] 声明为 acyclic 的层级关系没有闭环；大出度或并发写入场景下只声明"局部已核验"。
+- [ ] 已核当前 scope/reference_scopes/unique_position/cycle_group；跨码无环结论限定于声明的共同组，不将单码检查当全库 DAG 证明。
 
 ## 翻译与封面
 
@@ -61,6 +64,7 @@
 - [ ] 每次变更都有具体 `edit_note` 和至少一个 `sources` 项，`citation` 明确列出所支持字段；`self` 只可描述没有新增外部断言的维护/清理说明，不能支撑任何字段值。
 - [ ] 当前实体与 `revisions` 已回读，资格只取 `revision.version == entity.version`；历史修订、已失效来源、站内旧值和搜索摘要没有补当前核心证据。
 - [ ] 更新前已 GET 完整实体并带回所有未修改的可写字段（PUT 是整实体替换，不是局部 PATCH）；写后再次 GET 完整实体逐字段比对，而非只信 200 响应。
+- [ ] 使用单条收录接口时已核 OpenAPI 支持，版本取 Track、URL 取已读旧 position；本次证据与收录 sources 核对，其余收录和既有来源保留。隐藏记录无法完整读回时未声称已逐条核验。
 - [ ] 更新带了正确的 `expected_version`；409 `version_conflict` 时先回读、确认并发修改内容，再决定是否基于新版本重做，禁止自动/盲重放。
 - [ ] 创建的 `Idempotency-Key` 绑定唯一操作与原载荷；同键同载荷才重放，`409 idempotency_conflict` 未被误当成重放成功。
 - [ ] 已重新读取实体、`relations`、`occurrences` 与 `revisions`，并核对当前修订 `snapshot`、编辑者、实体版本与来源，确认未请求修改的数据没有丢失（`revisions` 没有 before/after 或定义版本字段）。

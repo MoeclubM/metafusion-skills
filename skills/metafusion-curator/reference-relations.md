@@ -2,11 +2,11 @@
 
 关系只从目标实例的 `GET /api/catalog/definitions` 取，只使用其中 `enabled` 的码；
 关系码清单只从 `document.relations` 取。管理员可通过目录定义 GUI 新增、停用或修改关系并保存；
-下表只是种子定义的 29 条对照快照，不记录或假设某个实例当前的 `etag`；该标记仅防止保存覆盖，不代表可读取的历史版本。
+下表只是源码种子的对照，不假设目标实例已升级或记录其当前 `etag`；该标记仅防止保存覆盖，不代表可读取的历史版本。新规则与用途需同时核对 OpenAPI 支持及当前定义。
 方向一律写作 `source → target`：载荷里的 `source_id` 在左、`target_id` 在右。
-方向写反不会报错，但会把事实写成另一个意思——这是关系数据最常见的错误来源。
+同 kind 端点方向写反可能仍被接受，但含义会改变；方向必须与来源核对，合法载荷不证明语义正确。
 
-## 种子定义的 29 条关系
+## 种子关系对照
 
 | 码 | 正向名 | 反向名 | source → target | 组 | 语义边界 |
 | --- | --- | --- | --- | --- | --- |
@@ -21,6 +21,8 @@
 | `credit_for` | 参与制作 | 署名人员 | `work`\|`content_unit`\|`expression`\|`release` → `agent` | 署名 | 任意职位用 `credit_role` 文本承载 |
 | `developed_by` | 开发者 | 开发了 | `work`\|`content_unit`\|`expression`\|`release` → `agent` | 署名 | |
 | `directed_by` | 导演 | 执导了 | `work`\|`content_unit` → `agent` | 署名 | |
+| `edition_of` | 发行组归属 | 发行版本 | `release` → `work`\|`collection` | 组成 | usage=release_group；跨同用途码每个发行最多一组 |
+| `expression_part` | 表达包含 | 所属整体表达 | `expression` → `expression` | 组成 | usage=expression_composition；同 Work、有序、无环 |
 | `illustrated_by` | 插画者 | 绘制了 | `work`\|`content_unit`\|`release` → `agent` | 署名 | |
 | `includes` | 组成包含 | 组成属于 | `collection`\|`work` → `work`\|`collection` | 组成 | acyclic + aggregate。专辑→曲目、系列→作品都用它 |
 | `lyricist_of` | 作词者 | 作词了 | `work`\|`content_unit`\|`expression` → `agent` | 署名 | |
@@ -46,18 +48,18 @@
 
 以下限制只描述这份种子快照；目标实例若已通过 GUI 启用扩展关系，按其 `document.relations` 的端点白名单判断。
 
-- **`track` 不能作为任何关系的 source 或 target**（29 条里 0 条）。
+- 种子关系没有 `track` 端点；管理员可按准确语义扩展，平台不禁止这些端点。
 - **`medium` 只能作为 `bonus_included_in` 的 target**，不能作 source。
 - **`content_unit` 永远不能作为 target**；作 source 也只能走署名类（`composed_by` / `created_by` / `credit_for` /
   `developed_by` / `directed_by` / `illustrated_by` / `lyricist_of` / `modeled_by` / `performed_by` /
   `photographed_by` / `translated_by` / `voiced_by` / `written_by`）。
-- `release` 只出现在 `bonus_included_in`（target）、`pressing_of`（两端）、署名类（source）。
+- `release` 可作为 edition_of 的 source，另有 bonus/再版/署名等关系，实际端点以定义为准。
 - 端点 kind 由 definitions 的白名单硬校验，越界返回 `invalid_endpoints`（自环也走这个码）。
 
 后果（对未扩展关系的实例属于模型缺口，不要硬凑）：**"某轨的编曲者""Disc 2 的指挥""某话改编自原作第 N 话"用这些种子关系表达不了**——
-按 [模型缺口与上报路径](reference-model-gaps.md) 报告，可用的近似是把署名挂到为该轨/该话新建的 `expression` 上。
+按 [模型缺口与上报路径](reference-model-gaps.md) 判断 GUI 扩展范围；只有署名确实属于表达时才写在 Expression 上，不为挂署名复制内容。
 
-## 种子关系的属性字段（29 条均允许下列 9 个字段）
+## 关系属性字段
 
 目标实例可在定义 GUI 中调整关系允许的字段；写入前以当前生效定义的 `document.relations[code].fields` 与 `document.fields` 为准。
 
@@ -82,22 +84,19 @@
     {"type": "character_in", "source_id": "<character-agent>", "target_id": "<work>",
      "attributes": {"character_rank": "main"}}
 
-属性键不在上表内 → `unknown_field`；枚举值不在词表内 → `invalid_term`。
-**agent 实体自己没有属性字段**，所以人物生卒、团体成立日、角色设定只能用关系边上的
-`begin_date` / `end_date` / `context` 近似，或按模型缺口上报。
+属性键不在目标关系允许的 fields 内 → `unknown_field`；枚举值不在词表内 → `invalid_term`。上表为通用种子字段，新关系不保证允许全部字段。
+Agent 自身可写字段以 applicable_kinds 为准；缺少主体生卒/设定时按授权扩展，不写成关系有效期或借 context 近似。
 
-## 多边、反向边、成环与基数（与直觉不同的四点）
+## 判重、作用域、成环与用途
 
-1. **反向边是否判重由 `symmetric` 决定**：只有声明 `symmetric=true` 的关系才检查"反向重复边"，而种子 29 条**全部
-   `symmetric=false`**。A→B 与 B→A 同类型的两条边都合法——需要双向语义时就建两条，不要以为服务端会拦。
-2. **区分同类多边要用 `attributes`，不是 `position`**：应用层判重键含 `position`，但数据库唯一索引
-   `(source_id, target_id, type, attributes)` **不含 position**；只靠 `position` 区分的两条边会撞唯一索引，
-   报 `constraint_violation` 而不是 `duplicate_relation`。同一人物配多个角色请用不同 `character` / `credit_role`。
-3. **成环检测只在同一关系码的边集内进行**：跨码的长路径环（`adaptation_of` + `sequel_of`…）服务端看不见，
-   所以"写入成功"不等于全库 DAG 成立。审查结论请限定在已复核的局部。
-4. **种子关系未设置基数限制**：29 条关系的 `max_outgoing` / `max_incoming` 全为 `0`，
-   `cardinality_exceeded`
-   在这份种子定义下**无法触发**；目标实例若已扩展，须重新判断。
+1. `symmetric` 控制反向判重；种子关系为非对称。单条事实已有正反显示名，不能为反向展示再建一条边；独立反向事实也须满足无环等其他规则。
+2. 普通关系按类型、端点、attributes 判重，position 不参与身份；只改 position 仍是 duplicate_relation。多角色署名用不同 character/credit_role 区分。expression_composition 另要求同一整体不能重复部分，即使换码或属性也不行。
+3. `acyclic` 默认检查单码边集；声明相同非空 `cycle_group` 后，多码存活边共同检查环。未声明共同组的跨码路径不自动校验；保存、定义影响检查与合并回放使用同一规则。
+4. `scope` 是同域约束：work（Work/ContentUnit/Expression）、release（Release/Medium/Track）、medium（Medium/Track）。Release.subjects 不是单值归属，不能用于推导共同 Work。不要与自由文本属性 attributes.scope 混淆。
+5. `reference_scopes` 约束允许的 entity 属性，如 {"context":"source_work"}；被引用对象必须与 source 同 Work。字段目标 kind 与指定端点都需支持该域，否则定义无效。
+6. `unique_position` 要求同源关系顺序唯一；expression_composition 在全部同用途码中共用顺序。release_group 的 max_outgoing=1 同样跨同用途码共同执行。其他基数按当前关系定义判断，不能假定所有关系无限制。
+
+expression_composition 必须是 expression→expression、scope=work、acyclic=true、cycle_group=expression_composition、aggregate=true、unique_position=true、symmetric=false；release_group 必须是 release→work/collection、max_outgoing=1、symmetric=false。管理员可在 GUI 选择用途自动填入必要规则，再做影响检查。关系码与名称可扩展，用途执行语义仍受服务端支持范围限制。
 
 ## 载荷与端点
 

@@ -10,7 +10,7 @@
 
 | # | 事实 | 本地种子或固定结构现状 | 正确处理与扩展范围 |
 | --- | --- | --- | --- |
-| 1 | 希望对漫画、小说、音乐等作受控业务分类 | 当前八类 kind 是通用结构，不含业务 types；自由 tags 和展示模板不承担受控分类约束 | 不借近似标签替代事实；若任务确需受控分类，先核实例是否有适用字段，再按授权通过 GUI 扩展字段/词表 |
+| 1 | 希望对漫画、小说、音乐等描述创作形态 | 八类 kind 不含业务 types；新版种子可选 creation_form 是属性与模板条件，不决定实体身份或可写字段 | 先核实例字段/词项；按授权在 GUI 扩展 creation_form 词表与模板 match/priority/blocks，不恢复 types 权力 |
 | 2 | 载体技术规格、黑胶 A/B 面及新增格式 | medium 种子提供 `catalog_number`/`format`/`role`/`tags`，format 词表目前有 10 项；未提供细分技术字段 | 按事实粒度在 GUI 新增适用于 medium/track 的字段与格式词项；盘号用 `medium.number`，黑胶轨号可用 `track.number="A1"`，需要面位筛选时另设明确字段，不塞包装附件 |
 | 3 | 发行活动、厂牌系列、代理渠道、正式版名、收录范围、整碟时长 | 种子已有 release 的 `events`/`distribution_channel` 等；未给每项事实单独的字段 | 真实发行题名用 `title`，事件按既有组字段语义填写；其余缺项在 GUI 新增适用于 release/medium 的字段或语义关系，不借 `edition_batch` 表达渠道 |
 | 4 | 专辑曲目与盒装各组成发行的用途区别 | 种子 `release_role` 只有 `primary`/`compilation`/`supplement`，未细分 constituent 等角色 | 曲目创作身份用歌曲 Work；专辑 Work 可经 `includes` 包含歌曲，发行 `subjects` 声明所有实际收录 Work，Track 引用歌曲 Expression。角色不足时扩展词表；盒装与原独立发行的联系可扩展 release→release 语义关系，不强标 compilation 或 pressing_of |
@@ -25,6 +25,8 @@
 | 13 | 外部 ID 区分 work/release-group/recording 等资源类型 | 预设键与 category 不一定细分外部资源语义 | 先核具体资源类型及实例外部库注册表，按授权扩展准确键、URL 模式与 category；不把不适用层级的 ID 塞进 infobox |
 | 14 | 实体删除与归属迁移 | 没有实体 DELETE；kind/work_id/release_id/medium_id 受 immutable_scope 限制，GUI 不能改这些结构契约 | 先核身份、引用和关系影响；按授权重建正确实体并选择适用的 lifecycle 操作。不同作用域不可强行合并，保留修订与已完成步骤 |
 | 15 | 清理终态实体的关联边 | deleted/merged 源端不可编辑，DeleteRelation 因源端权限拒绝；仅目标端终态时，生命周期管理员可通过目标端检查 | 区分源端与目标端，按实际权限和响应处理；合并工具在生命周期转换前完成已授权的边整理，失败即停止，不能宣称所有关联边恒 403 |
+| 16 | 整本/整季表达与章节/分集表达的组成 | 新版 usage=expression_composition 支持同 Work 有序组合，parts/wholes 是直接边投影 | 先核实例支持；用已启用用途关系，不写 Expression.parent_id，不复制表达；递归展平/组合等同性并未自动实现 |
+| 17 | 普通/限定/地区等发行版本组 | 新版 usage=release_group 指向 Work/Collection，跨同用途码每个发行最多一组 | 以来源显式建边；不能从相同 subjects 猜组，不需新增第九 kind |
 
 ## 服务端不拦、但会漂移数据质量的项
 

@@ -13,7 +13,7 @@
       }
     }
 
-上述仅演示属性落点，完整创建信封与必填值见 [载荷模板](reference-api-templates.md)。不要向当前请求添加已移除的 `types`；正式用途、媒介属性和身份依实际字段、收录与来源表达，标签不承担业务分类约束。
+上述仅演示属性落点，完整创建信封与必填值见 [载荷模板](reference-api-templates.md)。不要向当前请求添加已移除的 `types`；正式用途、媒介属性和身份依实际字段、收录与来源表达，标签不承担业务分类约束。新版可选 creation_form 仅作为 Work 的受控描述与模板条件，词项和模板可通过 GUI 编辑。
 
 ## kind → 种子可写属性字段
 
@@ -21,7 +21,7 @@
 
 | kind | `attributes` 种子字段 |
 | --- | --- |
-| `work` | `language`、`edition_date`、`copyright`、`imdb`、`infobox`、`events`、`duration`、`duration_source`、`author`、`volume_count`、`magazine`、`begin_date`、`end_date`、`episodes`、`platform`、`broadcast_start`、`broadcast_weekday`、`broadcast_end`、`air_network`、`tags` |
+| `work` | `creation_form`、`language`、`edition_date`、`copyright`、`imdb`、`infobox`、`events`、`duration`、`duration_source`、`author`、`volume_count`、`magazine`、`begin_date`、`end_date`、`episodes`、`platform`、`broadcast_start`、`broadcast_weekday`、`broadcast_end`、`air_network`、`tags` |
 | `agent` | `tags` |
 | `collection` | `language`、`tags` |
 | `content_unit` | `language`、`entry_role`、`air_date`、`tags` |
@@ -54,6 +54,7 @@
 | `locator_reference` | `medium`、`track` |
 
 词表外的值一律 `invalid_term`（消息可能带字段前缀，如 `packaging: invalid_term`）。
+新版 `creation_form` 词项来自现有创作模板码及 song；不在本页复制清单，实际以实例启用词项为准。creation_form 可省略，不证明身份或限制其他字段可写性。
 `country`、`platform`、`version_label`、`credit_role`、`scope`、`magazine` 是**自由文本**，不要当枚举填代码。
 
 ## 结构化字段的形状
@@ -116,10 +117,9 @@
 
 ### `inclusion_attributes` / `subject_attributes`
 
-**当前是空组**：组内没有任何子字段，`contents[].attributes`（收录附加属性）与 `subjects[].attributes`
+**种子是空组**：未扩展时组内没有任何子字段，`contents[].attributes`（收录附加属性）与 `subjects[].attributes`
 （发行对象附加属性）写任何键都是 `unknown_field`，检索路径 `inclusion_attributes.x` / `subject_attributes.x`
-同样不可用。要表达"本曲原出自哪张专辑""某轨的演奏者"这类事实时：能落到 `expression` / 关系边上的就落过去，
-落不下的按 [模型缺口](reference-model-gaps.md) 上报，不要塞进 `locator` 或 `attachments` 凑形状。
+同样不可用。收录语境属性可按授权在 GUI 为这些组新增子字段；来源是新版 contents[].sources 独立键，不能塞进 attributes 或 locator。作品/表达自身事实和关系仍按各自身份填写，缺少落点时见[模型缺口](reference-model-gaps.md)。
 
 ## `entry_role` 与 `air_date`
 

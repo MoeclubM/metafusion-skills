@@ -59,7 +59,7 @@
 | `duplicate_subject` | 同一 `(work_id, role)` 声明了两次 | 去重；`position` 不是身份 |
 | `duplicate_position` | **同一个 `track.contents` 数组内部**的收录序号重复（或为负） | 改 `contents[].position`。注意：**同一 `medium` 下多张 `track` 的 `position` 重复服务端不拦**（实测 200），那不是这个码 |
 | `duplicate_content` | 同一 Track 内同一 Expression **且 locator 完全相同** | 换 locator（不同时间段切片是允许的）或去重 |
-| `constraint_violation` | 跨 Work 的父子、跨 Release/Medium 的载体父子；也用于"只靠 `position` 区分的重复关系"撞 DB 唯一索引 | 父子只能在同一 Work / Release / Medium 内；区分多边请用 `attributes` |
+| `constraint_violation` | 数据库完整性约束冲突，如跨 Work/Release/Medium 的父子 | 父子只能在同一归属域；按当前 definitions 与实际冲突核查，不能通过改 position 伪造关系身份 |
 | `locator: unknown_field: <键>` | `locator` 里写了未声明的子键 | 只写定义声明的子字段 |
 | `locator: anchor_required: relative_to` | `locator` 填了子字段却没给锚点 | 有页码/时间码/路径时必须给 `relative_to`（`locator_reference` 词表：`medium` / `track`） |
 | `invalid_reference` | 被引用实体不存在／kind 不符／**不可见**／已 `deleted`/`merged` | 引用目标必须可见（`published`）；先读该实体确认；合并过的先 `/resolve` |
@@ -70,11 +70,16 @@
 | --- | --- | --- |
 | `invalid_relation_type` | 关系码不存在或未启用 | 只用 `definitions.document.relations` 里 `enabled` 的码（种子快照见 [关系码、方向与属性](reference-relations.md)） |
 | `invalid_endpoints` | 两端 kind 不符合该关系的 `source_kinds`/`target_kinds`（**自环也走这里**） | 按定义选两端；自环一律不支持 |
-| `relation_cycle` | 声明 `acyclic` 的关系会成环 | 改成表达真实层级的方向。检测**只在同一关系码的边集内**进行，跨码长路径环看不见 |
-| `duplicate_relation` | 同类型、同端点、**同属性**的边已存在（`attributes` 缺省与 `{}` 视为同一条） | 用不同属性区分（不同 `credit_role` / `character` / `language`）或先删旧边。**只改 `position` 无效**，会变成 `constraint_violation` |
+| `relation_cycle` | acyclic 关系会在单码或共同 cycle_group 中成环 | 按来源修正方向；未声明共同组的跨码路径不自动检查 |
+| `duplicate_relation` | 普通同码/同端点/同属性关系重复；expression_composition 中相同部分也跨码判重 | 普通多边按真实 character/credit_role 等区分；组合不重复部分。只改 position 无效 |
+| `duplicate_relation_position` | 声明 unique_position 的同源关系顺序重复；表达组合跨同用途码共同检查 | 回读同源关系并按真实目录安排唯一非负顺序 |
+| `relation_scope_mismatch` / `relation_reference_scope_mismatch: <字段>` | 端点或 entity 属性不符合 scope/reference_scopes | 核对固定 work/release/medium 归属，不能借 subjects 推导单 Work |
+| `cardinality_exceeded` | 超过当前定义基数；release_group 跨全部同用途码最多一组 | 核对已有组或关系，按真实来源调整，不能换关系码绕过 |
+| `invalid_relation_scope` / `invalid_cycle_group` / `invalid_reference_scope` / `invalid_relation_usage` | 定义规则不满足端点/字段/用途支持范围 | 在 GUI 修正规则并做影响检查，读目标实例实际错误字段 |
+| `invalid_template_match` / `invalid_template_block` | 模板条件的字段/操作/值不相容，或区块未知/重复 | 用适用于模板 kind 的字段、支持的条件和区块；先做影响检查 |
 | `merge_relation_conflict` | 合并会产生"自己指向自己"的边 | 先删掉造成自环的那条关系再合并 |
 
-**反向边是否判重由 `symmetric` 决定**：声明 `symmetric=true` 的关系会检查反向重复边；种子 29 条**全部 `symmetric=false`**，
+**反向边是否判重由 `symmetric` 决定**：声明 `symmetric=true` 的关系会检查反向重复边；种子关系为非对称，
 A→B 与 B→A 可能都被服务器接受；同一事实的反向展示不需要另建边，只有来源证明另一条独立事实时才新增，不能以服务器接受为正确性证明。
 
 ## 生命周期与并发
@@ -98,11 +103,7 @@ A→B 与 B→A 可能都被服务器接受；同一事实的反向展示不需�
 | `rate_limited`（429） | 超过进程内账户/IP + 路由模板的固定窗配额；实际额度取账号/用户组/全局策略或路由默认 | 读 `Retry-After` 与 `X-RateLimit-*` 退避；读取可重试，写入不自动或立刻重放。后台策略可调整或 unlimited；多副本计数独立，不是全局精确上限 |
 | `invalid_limit` / `invalid_offset` / `invalid_page` / `pagination_conflict`（400） | 实体列表分页违反 `limit=1..100`、非负整数 offset、正整数 page，或同时传 page+offset | 修正客户端参数；服务端不会静默收敛。`page` 与 `offset` 二选一 |
 
-## 种子定义中不可达的错误码（"没遇到"不等于漏测）
-
-- `cardinality_exceeded`：29 条关系的 `max_outgoing` / `max_incoming` 全为 `0`，基数上限不存在。
-
-基数校验由目标实例当前关系定义控制；当前关系仅使用 source_kinds/target_kinds，已无实体业务类型端点白名单。检查清单按该实例当前生效定义标注适用性，不要把种子快照当运行态。
+基数校验由当前关系定义及其用途控制。新版种子 edition_of 有 max_outgoing=1，不能再把 cardinality_exceeded 标为种子不可达；旧实例是否支持新规则须核 OpenAPI 与 definitions。关系端点使用 kind 白名单，已无业务类型端点白名单。
 
 ## 遇到没见过的错误
 

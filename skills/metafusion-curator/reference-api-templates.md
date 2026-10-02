@@ -263,7 +263,7 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
       "sources": [{"kind": "url", "citation": "碟面目录", "url": "https://example.org/disc-1"}]
     }
 
-- **`contents` 是唯一收录来源**，项为 `{expression_id, position, locator, attributes?}`。
+- **`contents` 是唯一收录来源**，新版项为 `{expression_id, position, locator, attributes?, sources?}`；先核目标实例 DTO，旧版可能不接受 sources。
   单内容引用走 `contents`（`expression_id` + `position` + `locator`），不要另加引用字段。
 - **Track 上没有 `work_id`**：所属 Work 由 `medium → release → subjects` 推导。
   提交 `work_id` 会因为不在该 kind 的允许字段里被拒绝。
@@ -278,6 +278,24 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
 书籍场景的 locator 示例：
 
     "locator": {"relative_to": "medium", "page_start": 12, "page_end": 40, "chapter": "第 1 章"}
+
+### 单条收录（先核 OpenAPI 支持）
+
+    POST /api/catalog/tracks/<track-uuid>/contents
+    {
+      "inclusion": {
+        "expression_id": "<expression-uuid>",
+        "position": 0,
+        "locator": {},
+        "attributes": {},
+        "sources": [{"kind": "url", "citation": "官方目录确认本轨收录该录音", "url": "https://example.org/disc"}]
+      },
+      "expected_version": 7,
+      "edit_note": "依据官方曲目表增加本轨录音收录",
+      "sources": [{"kind": "url", "citation": "官方曲目表", "url": "https://example.org/disc"}]
+    }
+
+expected_version 来自 Track。PUT `/api/catalog/tracks/{id}/contents/{position}` 使用相同信封，URL 为回读的旧位置，inclusion.position 可以重排。DELETE 同路径只提交 expected_version/edit_note/sources；不要省略请求体。写后回读 Track、occurrences 与修订，409 时回读并合并；不要根据不可见记录的猜测位置操作。来源省略/保留口径见[API 行为参考](reference-api-behavior.md)。
 
 ## 关系
 
@@ -300,8 +318,7 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
   种子关系码的方向、端点与属性字段见 [关系码、方向与属性](reference-relations.md)。
 - 种子关系允许 9 个属性字段，实例可通过当前定义增改：`role`、`credit_role`、`character_rank`、`character`（entity → `agent`）、
   `context`（entity → `work`\|`content_unit`\|`expression`\|`release`）、`language`、`begin_date`、`end_date`、`scope`。
-- 服务端拒绝自环（`invalid_endpoints`）与 acyclic 成环（`relation_cycle`；检测只在同一关系码的边集内）；
-  **反向边是否判重由目标实例定义的 `symmetric` 决定**；种子 29 条全非 `symmetric`。
+- 服务端拒绝自环（`invalid_endpoints`）与 acyclic 成环（`relation_cycle`；同 cycle_group 多码共同构图，未声明则单码）；反向判重与基数、作用域、顺序唯一依当前定义。
 - 更新用 `PUT /api/catalog/relations/{id}`；删除用 `DELETE /api/catalog/relations/{id}`，
   **必须带 body**（`expected_version` + `edit_note` + `sources`），不带版本 → 409，完全不带 body → 400。
 
@@ -313,6 +330,7 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
 - `/api/catalog/entities/{id}/relations`（关系与对端实体）；
 - `/api/catalog/entities/{id}/occurrences`（表达/内容单位的反向收录）；
 - `/api/catalog/entities/{id}/revisions`（本次修订快照与证据；行里只有写后 `snapshot`，**没有 `before`/`after`**）；
+- 实例支持时，`/api/catalog/expressions/{id}/composition` 与 `/api/catalog/releases/{id}/editions` 核对直接组成和显式版本组；不由 subjects 推测；
 - 实体对比用 `/api/catalog/compare?ids=<id1>,<id2>`，返回 `items[].entity` 与 `items[].children`；发行/载体的子项形状是 `{medium, tracks}`，其他 kind 的 `children` 为空。
 
 核对返回的 ID、归属（work / release / medium）、`position`、翻译回退、`pictures` 与 revision 内容是否与预期一致。

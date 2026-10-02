@@ -40,9 +40,9 @@ description: 执行 MetaFusion 跨媒介实体编目、查重、发行载体维�
 - 按 **kind + 原题名/别名 + 父级作用域 + 已核验的内容身份**，辅以官方编号、条码、外部 ID 与实际关系查重。标签只作线索，同名不证明同一对象；复用独立歌曲 Work 和录音 Expression，避免按专辑重复建歌。
 - 核心字段与身份结论须逐字段 CORE-P1；P2/Wiki 用于发现与辅助。来源策略、当前版本资格和封面权利沿用对应参考，不用站内旧值、搜索摘要或模型记忆补证。
 - 核到官网后，除记录 `sources`，还将完整 URL 写入 `external_ids.official_website`；前端官方链接读取此字段。没有可核实官网就留空，不用渠道页代替。
-- 创作目录与发行承载分开；Release 的 `subjects` 覆盖 Track 实际收录 Expression 的全部 Work。结构归属用固定字段，语义关系与属性使用目标实例的当前生效 definitions。
+- 创作目录与发行承载分开；Release 的 `subjects` 覆盖 Track 实际收录 Expression 的全部 Work。整本/整季表达组合与显式版本组使用实例声明的关系用途；共同 subjects 不证明属于同一版本组。结构归属用固定字段，语义关系与属性使用目标实例的当前生效 definitions。
 - 编目事实只写目录；互动走 community、文件走 storage，定义管理须在已授权范围内。实体可见性与引用有效性以目录读接口为准：404 表示当前调用者不可读取该对象，不能据此断言全库不存在；401/403、429、5xx 或网络失败均为未知，停止依赖写入。
-- PUT 是整实体替换：先 GET，保留所有未修改的可写字段，携带 `expected_version`。409 后回读和比对，不盲重放。创建使用唯一 `Idempotency-Key`，同键只能重放原载荷。
+- 实体 PUT 是整实体替换：先 GET，保留所有未修改的可写字段，携带 `expected_version`。实例支持时，单条收录用 Track contents 编辑接口并取 Track 版本，避免覆盖其余收录；契约见[载荷模板](reference-api-templates.md)。409 后回读和比对，不盲重放。创建实体/关系使用唯一 `Idempotency-Key`，同键只能重放原载荷。
 - 每次写入提供具体 `edit_note` 与 `sources`；服务端接受证据信封不证明字段级权威性。发布、下架、合并与停用依 [API 行为参考](reference-api-behavior.md)选择端点和权限。
 - 写后回读实体、当前修订、关系与 occurrences，逐字段核对版本、来源、层级和未请求修改的数据；客户端的成功标志不能替代这一步。
 - 碰到缺字段或关系，先读实例 definitions 判断是否已有 GUI 扩展；确无落点则报告缺口，不借不符语义的标签、伪造归属或直接 SQL 填充。已获授权的定义管理可走后台 GUI 的编辑、影响检查与 `expected_etag` 保存流程，接口见[模型缺口与扩展通道](reference-model-gaps.md)。

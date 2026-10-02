@@ -15,7 +15,7 @@
     release（具体发行；经 subjects 声明所收录表达的全部 Work）
     └── medium（盘、卷、文件集）
         └── track（容器内位置）
-            └── contents[]（引用一个或多个 expression，带 position 与 locator）
+            └── contents[]（引用一个或多个 expression，带 position、locator 与 sources）
 
 `Work` 保存创作身份与正式题名。发行侧的盘号、画质、音质和包装不能拼入题名；官方创作名中的季数、卷号或 OST 等词须按来源判断身份，不能机械删除。
 `ContentUnit` 是同一 Work 内的逻辑目录（第几话、第几章、第几卷的篇目），
@@ -37,7 +37,7 @@
 - `medium` 必须有一个 `release_id`，`parent_id` 只能指向同一 Release 的 Medium。
 - `track` 必须有一个 `medium_id`，`parent_id` 只能指向同一 Medium。
 - `track.contents[].expression_id` 指向表达；`position` 是同一 Track 内的收录顺序，
-  `locator` 记录页码、章节号、时间段、文件路径等定位信息。
+  `locator` 记录页码、章节号、时间段、文件路径等定位信息；新版 `sources` 保存直接收录证据，旧记录可为空，不自动补造。
 - `release.subjects` 声明该发行实际收录表达的**全部** Work，`role` 用 `release_role`
   （`primary` / `compilation` / `supplement`）。任一收录表达的 Work 未在 `subjects` 里声明，
   保存会被拒绝（`undeclared_release_subject`）。
@@ -47,6 +47,12 @@
 - 所属域不可变：普通 PUT 不能改 `kind` / `work_id` / `release_id` / `medium_id`；换归属等于重建实体。
 
 ## 表达复用的边界
+
+以下能力需先确认目标实例的 OpenAPI 与 definitions 已支持，不能将源码新增能力当作已部署事实：
+
+- 整本译文或整季剪辑可用 `usage=expression_composition` 的关系有序包含同 Work 的章节/分集表达（种子码 `expression_part`）。部分可被多个整体复用；同一整体在全部同用途码中不能重复部分或 position，并共同检查无环。仅返回直接组成，不自动递归展平或证明两份表达等同。
+- 普通、限定、地区与黑胶 Release 可经 `usage=release_group` 关系归到同一个 Work 或 Collection（种子 `edition_of`）；每个发行在全部同用途码中最多一个组。专辑 Work 可作组，纯商品组织可用 Collection，无需新 kind。
+- 共享 subjects 只表示共同收录作品；同一歌曲出现在单曲、专辑、精选集中，不意味着这些发行互为版本。升级不推测补边，按来源明确建立版本组。
 
 同一 Expression 可以被多个发行、多个 Track 重复收录，从而支持"收录于哪些版本"的反查
 （`GET /api/catalog/entities/{id}/occurrences`）。
@@ -84,6 +90,7 @@
 1. 歌曲创作母体是 Work；具体录音/母带是 Expression（不同编曲版本是不同 Expression，或经 `alternate_take_of` 关联）。
 2. 单曲和专辑各自有真实发行时分别建立 Release；一张专辑的普通版、限定版、地区版也各有 Release，按实物建立 CD、黑胶或特典 BD 的 Medium 与 Track。
 3. 同一录音在单曲和多个专辑发行中出现时复用同一 Expression；版本差异写在 Release / Medium / Track。
+4. 例如歌曲 A 的录音 A1 被单曲 CD 第 1 轨、专辑 B CD 第 3 轨、黑胶 A1 轨及精选 C 第 8 轨复用；各发行的 subjects 声明歌曲 A。专辑 B 的普通/限定/地区/黑胶发行显式归专辑 B 组，精选 C 归自己的组。限定版附赠 MV BD 建真实 Medium/Track，并声明 MV 表达所属 Work。
 
 ### 图书与漫画
 
@@ -91,6 +98,7 @@
 2. 有章节目录证据后，按章节或篇章建立 `content_unit`，并在同一 Work 内设置父子与顺序。
 3. 每个真实单行本、精装本或电子版是独立 Release；同一章节被多个版本收录时复用同一 Expression，
    locator 记页码与章节（页码是"本版定位"，会随排版变化）。
+4. 整本原文/译文各建整体 Expression，与对应章节 Expression 用表达组合关系连接；章节译文另用 translation_of 指向章节原文。出版物中的顺序以实际 Track 和 contents 为准。
 
 ## 不变量审查
 
@@ -101,6 +109,7 @@
 - 同一 `track.contents` 数组内的 `position` 不重复（`duplicate_position` 只管这一层）；
   同一 Medium 下兄弟 Track 的 `position` 服务端**不拦**（实测重复也能建），靠自检与约定约束；
 - 每个发行的 `subjects` 覆盖了它实际收录表达的全部 Work（否则会出现 `undeclared_release_subject`）；
+- 表达组合符合共同 Work、无环与跨同用途码的唯一顺序；版本组有明确来源，没有从 subjects 或格式推测；
 - 多作品盒装没有被错误地挂到单一作品，也没有伪造 `work_id`；
 - 封面与文件资产没有被当成创作内容，哈希/对象键/下载地址没有写进题名或动态字段。
 

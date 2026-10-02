@@ -12,8 +12,8 @@ description: 按 MetaFusion 的 LRM 分层和真实发行证据命名 Agent、Co
 ## 命名与版本决策
 
 1. Work 保存创作身份和正式题名；根据官方证据区分独立创作与发行修饰。不得机械删除正式标题中的 Season、Vol、OST 或其它词。出版社、品番、画质、音质、包装和普通/限定版信息放到对应发行或载体字段。
-2. ContentUnit 保存同一 Work 内的逻辑章、集、篇目；Expression 保存可复用的正文、译文、录音或正片版本。盘号、黑胶面位和商品品番不能改变创作归属。
-3. Release 对应一个可核实的发行版本。普通、限定、地区、数字和再版依真实差异分别编目；官方版名进入 title，日期、编号、地区和包装进入实例声明的字段。店铺赠品先判断是否改变商品版次，不能只因购买渠道不同就制造发行。
+2. ContentUnit 保存同一 Work 内的逻辑章、集、篇目；Expression 保存可复用的正文、译文、录音或正片版本。实例支持时，整本/整季 Expression 经 expression_composition 用途关系有序包含同 Work 的部分表达，不使用 Expression.parent_id。盘号、黑胶面位和商品品番不能改变创作归属。
+3. Release 对应一个可核实的发行版本。普通、限定、地区、数字和再版依真实差异分别编目；官方版名进入 title，日期、编号、地区和包装进入实例声明的字段。实例支持时，经 release_group 用途关系显式归到共同 Work 或 Collection；不从共享 subjects 推断版本组。店铺赠品先判断是否改变商品版次，不能只因购买渠道不同就制造发行。
 4. Medium 与 Track 按真实包装和目录建立；number 保留官方编号，position 表示顺序。复用同一 Expression，让 CD、黑胶、数字或不同专辑的 Track 通过 contents 引用它。
 5. 歌曲自身可以是独立 Work；“单曲发行”是 Release，“专辑作品”可有自己的 Work。独立歌曲不因收录而改挂专辑；专辑到歌曲使用目标实例允许的组成关系，发行 subjects 声明全部实际收录的 Work。
 6. 多作品盒装用 subjects + 实际 Medium/Track 收录链；只有来源证明汇编本身有创作身份时另建汇编 Work。附赠 MV/现场 BD 应建立实际载体及所收录表达，附件清单不能代替内容链。

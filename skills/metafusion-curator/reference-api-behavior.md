@@ -111,6 +111,8 @@
 | GET | `/api/catalog/entities/{id}/relations` | 正向与反向关系，响应同时带回对端 `entities` |
 | GET | `/api/catalog/entities/{id}/occurrences` | 反向收录：expression = 自身收录，content_unit = 其表达，work = 其表达 |
 | GET | `/api/catalog/releases/{id}/toc` | 同一快照读取发行、按位置排序的 Medium / Track、去重的可见 Expression 与当前 `definition_etag` |
+| GET | `/api/catalog/expressions/{id}/composition` | 支持新规则的实例返回整体 expression、直接 parts/wholes（每项 relation+entity）与 definition_etag |
+| GET | `/api/catalog/releases/{id}/editions` | 支持新规则的实例返回 release、显式 group/editions 与 definition_etag；未分组为 null/[] |
 | POST | `/api/catalog/expressions/details` | 批量取表达详情（body `{ids:[...]}`，上限 500） |
 | GET | `/api/catalog/compare?ids=` | 对比 2–6 个可见实体；发行/载体附带承载内容 |
 | GET | `/api/catalog/shelves`、`/api/catalog/shelves/feed` | 货架规则与求值结果 |
@@ -158,6 +160,7 @@
 - **更新**：`PUT /api/catalog/entities/{id}`。**是整实体替换，不是局部 PATCH**：先 GET 完整实体，
   改要改的字段，把无关的可写字段（尤其是 `contents` / `subjects` / `translations` / `attributes`）原样带回，并带当前 `expected_version`。
   响应成功后再次 GET 完整实体逐字段回读，再检查 `relations`、`occurrences` 与当前 `revisions`；不能只凭 200 响应判断完成。
+- **单条收录**：实例支持时用 `POST /api/catalog/tracks/{id}/contents` 或 `PUT/DELETE /api/catalog/tracks/{id}/contents/{position}`，体为 `{inclusion?, expected_version, edit_note, sources}`；expected_version 是 Track 版本，URL 是旧 position，替换体可写新 position。删除仍须 body。修改与 Track 修订在同一事务完成，其他隐藏历史收录保留且响应裁剪。该接口不承诺创建实体/关系的 Idempotency-Key 行为。
 - **生命周期端点只做合并与停用**：`POST /api/catalog/entities/{id}/lifecycle`（管理员，权限
   `catalog.lifecycle.manage`），body 是 `{target_id?, expected_version, edit_note, sources}`，**没有 `action` 字段**。
   `target_id` 留空即停用（`deleted`）、有值即合并（`merged`；目标须同 kind、同归属、已发布，
@@ -201,6 +204,7 @@
   Track 历史快照中的收录按表达当前可见性裁剪，库中原始事实保持完整；公开读回不能作为完整历史备份。
 - `GET /api/catalog/entities/{id}/relations` 返回 `{items, entities, subject_id}`：`entities` 包含关系两端实体与主体，
   `subject_id` 是被查实体；关系版本号从这里取。
+- 新版 `contents[].sources` 是收录直接证据，随实体、发行 TOC 与 occurrences 返回；它不等于逐字段来源或完整历史。旧记录 sources 可为空；旧 whole-entity PUT 省略此键时，新服务保留未改事实的来源，新增/改变的收录默认用本次写入证据。表达组合/版本组投影按当前可见性过滤，组合只读直接边。
 - 实体 DTO 另含只读 `updated_at`；`pictures[]` 的可选字段与排序约束见上文图片契约。
 - `GET /api/catalog/entities` 返回 `items` + 真实 `total`（COUNT）；分页边界**可能重复返回同一实体**，
   客户端建本地索引必须按 `id` 覆盖。
@@ -212,7 +216,7 @@
 ## 不要过度声称
 
 - **不要**声称这些接口提供跨实体全量 ACID 事务、字段级来源、封面许可字段、完整审计或全库 DAG 证明：
-  单次写入是**单实体（或单关系）事务**，修订快照按实体记录；来源只属于修订。
+  单次编辑以实体或关系作为版本边界，修订快照按实体记录；新收录可另保存直接 sources，但不形成逐字段 provenance。
 - **不要**用近似数据填补模型缺口，也不要为了绕过校验去改数据库、改触发器或伪造 `work_id`。
 - 目标实例的当前生效 definitions 与本文的种子默认值可能不同（定义由管理员演进）；
   以 `GET /api/catalog/definitions` 为准，并在报告中列出差异。
