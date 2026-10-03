@@ -1,0 +1,4 @@
+interface:
+  display_name: "MetaFusion 关系查询"
+  short_description: "只读查询跨媒介实体的结构、收录、署名与动态关系，并说明分页和可见范围"
+  default_prompt: "使用 $metafusion-relationship-query 查询指定实体的关系，并说明关联方向与查询范围。"

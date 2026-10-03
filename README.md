@@ -13,9 +13,12 @@
 |---|---|---|
 | **metafusion-curator** | [`skills/metafusion-curator/`](skills/metafusion-curator/SKILL.md) | 站点数据的读写与审查总则：按身份锚点、内容与父级作用域查重、层级归属、关系审查、封面、多语言、证据与写后核验；附本地凭据与单一通用客户端、API 行为、错误码、接口归属、文件上传、数据模型、字段适用层级与白名单（`reference-types-and-fields.md`）、关系码全表（`reference-relations.md`）、模型缺口清单（`reference-model-gaps.md`）参考。 |
 | **lrm-catalog-standards** | [`skills/lrm-catalog-standards/`](skills/lrm-catalog-standards/SKILL.md) | MetaFusion LRM 编目与发行版命名规范：按当前 Agent / Collection / Work / ContentUnit / Expression / Release / Medium / Track 边界处理跨媒介实体与发行版命名。 |
+| **metafusion-relationship-query** | [`skills/metafusion-relationship-query/`](skills/metafusion-relationship-query/SKILL.md) | 只读批量查询实体的结构、收录和语义关系，按方向、运行时关系码及对端层级筛选；提供独立 Python 查询脚本。 |
 
 两个技能互为补充：`metafusion-curator` 是数据操作与审查总则，`lrm-catalog-standards` 是发行版命名与内容复用的细分规范。
 两者都引用 `reference-api-behavior.md`；与实例响应不一致时以实例为准。
+
+`metafusion-relationship-query` 可独立安装，用于回答关联查询问题；不会执行实体或关系写入。
 
 ## 参考资料的维护边界
 
