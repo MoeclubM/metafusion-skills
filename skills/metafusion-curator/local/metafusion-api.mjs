@@ -137,7 +137,7 @@ export async function request(pathname, {
 
       if (response.status !== 429 && response.status < 500) return result;
     } catch (error) {
-      result = { status: 0, body: { error: "network", detail: String(error) }, headers: {} };
+      result = { status: 0, body: { error: "network", detail: redact(String(error), pat) }, headers: {} };
     }
 
     if (attempt + 1 < attempts) {
@@ -171,31 +171,194 @@ export function normalizePageLimit(limit = 100) {
   return limit;
 }
 
-export async function listAll(pathname, params = {}, limit = 100) {
-  if (!pathname.startsWith(API_PREFIX)) throw new Error(`请求路径必须以 ${API_PREFIX} 开头`);
+const PAGINATION_PARAMS = new Set(["page", "offset", "limit"]);
+const MAX_COLLECTION_PAGES = 200_000;
+
+function pageFailure(offset, reason, extra = {}) {
+  return { offset, reason, ...extra };
+}
+
+/**
+ * 分页读取列表并报告可见范围覆盖。requestFn 可替换为离线 fixture/mock；
+ * 每次调用收到带自动 limit/offset 的规范 API 路径，返回 {status, body}。
+ */
+export async function collectPages(pathname, {
+  params = {},
+  limit = 100,
+  requestFn = request,
+} = {}) {
+  if (typeof pathname !== "string" || !pathname.startsWith(API_PREFIX)) {
+    throw new Error(`请求路径必须以 ${API_PREFIX} 开头`);
+  }
+  const rawPathname = pathname.split(/[?#]/, 1)[0];
+  if (rawPathname.split("/").some((part) => part === "." || part === "..") || /[\\]|%2e|%2f|%5c/i.test(rawPathname)) {
+    throw new Error(`请求路径必须是规范化后的 ${API_PREFIX} 路径`);
+  }
+  const parsedPath = new URL(pathname, "https://local.invalid");
+  if (parsedPath.origin !== "https://local.invalid" || !parsedPath.pathname.startsWith(API_PREFIX)) {
+    throw new Error(`请求路径必须是规范化后的 ${API_PREFIX} 路径`);
+  }
+  const pathnamePaginationParams = [...parsedPath.searchParams.keys()]
+    .filter((key) => PAGINATION_PARAMS.has(key.toLowerCase()));
+  if (pathnamePaginationParams.length) {
+    throw new Error(`分页参数由 collectPages 管理，不能写在 pathname query 中：${pathnamePaginationParams.join(", ")}`);
+  }
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    throw new Error("分页 params 必须是对象");
+  }
+  const conflictingParams = Object.keys(params).filter((key) => PAGINATION_PARAMS.has(key.toLowerCase()));
+  if (conflictingParams.length) {
+    throw new Error(`分页参数由 collectPages 管理，不能从 params 传入：${conflictingParams.join(", ")}`);
+  }
+  if (typeof requestFn !== "function") throw new Error("requestFn 必须是函数");
   limit = normalizePageLimit(limit);
+
   const items = [];
-  const seenFirstIds = new Set();
+  const seenIds = new Set();
+  const duplicateIds = new Set();
+  const pageSignatures = new Set();
+  const failures = [];
+  let total = null;
+  let rawCount = 0;
+  let pages = 0;
   let offset = 0;
 
-  for (;;) {
+  for (; pages < MAX_COLLECTION_PAGES;) {
     const url = new URL(pathname, "https://local.invalid");
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, String(value));
     url.searchParams.set("limit", String(limit));
     url.searchParams.set("offset", String(offset));
 
-    const result = await request(`${url.pathname}${url.search}`);
-    if (result.status !== 200 || !result.body) {
-      const code = result.body?.error || result.body?.code || result.status;
-      throw new Error(`分页读取失败：HTTP ${result.status} ${code}`);
+    const pageOffset = offset;
+    pages += 1;
+    let result;
+    try {
+      result = await requestFn(`${url.pathname}${url.search}`);
+    } catch (error) {
+      failures.push(pageFailure(pageOffset, "request_threw", {
+        errorName: error?.name ?? "Error",
+      }));
+      if (total === null) break;
+      offset += limit;
+      if (offset >= total) break;
+      continue;
     }
-    const page = result.body.items || [];
-    const firstId = page[0]?.id;
-    if (firstId && seenFirstIds.has(firstId)) break;
-    if (firstId) seenFirstIds.add(firstId);
-    items.push(...page);
-    if (page.length < limit || (result.body.total != null && items.length >= result.body.total)) break;
-    offset += limit;
+
+    const status = result?.status;
+    if (status !== 200 || !result?.body || typeof result.body !== "object" || Array.isArray(result.body)) {
+      failures.push(pageFailure(pageOffset, "request_failed", {
+        status: Number.isInteger(status) && status > 0 ? status : null,
+        code: result?.body?.error ?? result?.body?.code ?? null,
+      }));
+      if (total === null) break;
+      offset += limit;
+      if (offset >= total) break;
+      continue;
+    }
+
+    const body = result.body;
+    const page = body.items;
+    if (!Array.isArray(page)) {
+      failures.push(pageFailure(pageOffset, "invalid_items_shape", { status }));
+      break;
+    }
+
+    const pageTotal = body.total;
+    const validTotal = Number.isSafeInteger(pageTotal) && pageTotal >= 0;
+    let stopAfterPage = false;
+    if (!validTotal) {
+      failures.push(pageFailure(pageOffset, "invalid_total", { value: pageTotal ?? null }));
+      stopAfterPage = true;
+    } else if (total === null) {
+      total = pageTotal;
+    } else if (pageTotal !== total) {
+      failures.push(pageFailure(pageOffset, "total_drift", { expected: total, actual: pageTotal }));
+      stopAfterPage = true;
+    }
+
+    if (page.length > limit) failures.push(pageFailure(pageOffset, "page_exceeds_limit", { limit, actual: page.length }));
+
+    const pageIds = [];
+    for (let index = 0; index < page.length; index += 1) {
+      const item = page[index];
+      if (!item || typeof item !== "object" || Array.isArray(item) || typeof item.id !== "string" || !item.id.trim()) {
+        failures.push(pageFailure(pageOffset, "invalid_item_shape", { index }));
+        continue;
+      }
+      pageIds.push(item.id);
+      if (seenIds.has(item.id)) {
+        duplicateIds.add(item.id);
+        failures.push(pageFailure(pageOffset, "duplicate_id", { id: item.id }));
+      } else {
+        seenIds.add(item.id);
+        items.push(item);
+      }
+    }
+
+    if (pageIds.length) {
+      const signature = JSON.stringify(pageIds);
+      if (pageSignatures.has(signature)) {
+        failures.push(pageFailure(pageOffset, "repeated_page", { ids: pageIds }));
+        rawCount += page.length;
+        offset += page.length;
+        break;
+      }
+      pageSignatures.add(signature);
+    }
+
+    rawCount += page.length;
+    offset += page.length;
+
+    if (stopAfterPage) break;
+
+    if (page.length === 0) {
+      if (total === null || offset < total) {
+        failures.push(pageFailure(pageOffset, "empty_page_before_total", { total }));
+      }
+      break;
+    }
+
+    if (page.length < limit && total !== null && offset < total) {
+      failures.push(pageFailure(pageOffset, "short_page_before_total", {
+        count: page.length,
+        nextOffset: offset,
+        total,
+      }));
+    }
+
+    if (total !== null && offset >= total) {
+      if (offset > total) failures.push(pageFailure(pageOffset, "raw_count_exceeds_total", { total, nextOffset: offset }));
+      break;
+    }
+
+    if (page.length < limit && total === null) break;
+  }
+
+  if (pages >= MAX_COLLECTION_PAGES && (total === null || offset < total)) {
+    failures.push(pageFailure(offset, "page_limit_exceeded", { maxPages: MAX_COLLECTION_PAGES }));
+  }
+
+  const coverage = {
+    basis: "当前调用者可见的列表范围",
+    pages,
+    total,
+    rawCount,
+    uniqueCount: items.length,
+    duplicateIds: [...duplicateIds],
+    complete: total !== null && rawCount === total && items.length === total && failures.length === 0,
+    failures,
+  };
+  return { items, coverage };
+}
+
+export async function listAll(pathname, params = {}, limit = 100) {
+  const { items, coverage } = await collectPages(pathname, { params, limit });
+  if (!coverage.complete) {
+    const statuses = [...new Set(coverage.failures.map((failure) => failure.status).filter((status) => Number.isInteger(status) && status > 0))];
+    const statusText = statuses.length ? ` HTTP ${statuses.join(",")}` : "";
+    const error = new Error(`分页读取不完整${statusText}：${coverage.failures.length} 个分页异常；total=${coverage.total ?? "未知"} raw=${coverage.rawCount} unique=${coverage.uniqueCount}`);
+    error.coverage = coverage;
+    throw error;
   }
   return items;
 }

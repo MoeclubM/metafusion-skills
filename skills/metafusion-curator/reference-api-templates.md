@@ -1,7 +1,6 @@
 # MetaFusion API 载荷参考
 
-这是当前实现的最小载荷参考。提交前先读 `GET /api/openapi.json`、`GET /api/catalog/definitions`
-和 [API 行为参考](reference-api-behavior.md)。认证、字段码与可用值以目标实例为准，全站只有 `/api` 这一套前缀。
+本页是服务端 API 载荷示例的唯一维护处。提交前先读目标实例的 `/api/openapi.json` 与 `/api/catalog/definitions`；认证、字段码与可用值以实例为准，全站只有 `/api` 这一套前缀。工具参数和 plan schema 以相应工具 `--help` 为准，不在此复制。
 
 ## 请求头与证据
 
@@ -11,7 +10,7 @@
     # PAT 是 `mfp_` 前缀的长期机器凭据：跑脚本或 Agent 时用它，不要共用某个人的会话令牌；
     # 它的有效权限 = 账号现时权限 ∩ 创建时选的 scopes（权限码），不够就 403，无效/吊销/过期是 401 invalid_token
     Content-Type: application/json
-    Idempotency-Key: <uuid>        # 可选，仅创建实体 / 创建关系
+    Idempotency-Key: <uuid>        # handler 允许省略；仅创建实体 / 创建关系（非据 OpenAPI 缺席推断）
                                    # 持久 24h；键按操作 + 用户 + 请求键隔离，并保存载荷摘要。
                                    # 同键同载荷重放首次结果；同键异载荷 → 409 idempotency_conflict。
 
@@ -38,7 +37,11 @@
       "sources": [{"kind": "url", "citation": "…", "url": "https://…"}]
     }
 
-PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，其余可写字段原样带回；带当前 `expected_version`。响应成功后再次 GET 完整实体逐字段回读，并读取当前修订；不要只凭 200 响应判断成功。
+PUT 是**整实体替换**：带当前 `expected_version`，写后回读并逐字段核对。Track contents 可能因可见性被裁剪，不能把 GET 后整实体 PUT 说成能保全隐藏 contents；修改单条收录使用下文的专用 API。
+
+状态切换由端点与 DTO 决定，不提交 `action`：`POST /api/catalog/entities/{id}/lifecycle` 的 `LifecycleEdit` 无 `action`（`target_id` 有值时合并，无值时删除）；发布走实体 `PUT` 并设 `entity.status: "published"`，至少需要一条翻译；`POST /api/catalog/entities/{id}/unpublish` 只允许 `published → draft`，其 DTO 不含 `target_id`。
+
+本地 `mf-guarded-update` 与 `mf-track-content` 的 plan 字段和参数以各自 `--help` 为准。本页只维护服务端 API 请求形状；工具默认预览，执行开关不提供任务授权。
 
 ## 各 kind 允许的结构字段
 
@@ -118,7 +121,7 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
 - `title` 是基础题名，`original_language` 声明它属于哪个语种；原语言题名放在对应 locale 的 `translations` 行里。
 - `external_ids` 的键必须来自实例预设；作品/发行/主体的官方站点用 `official_website` 记**完整 URL**
   （前端"外部资料"面板据此渲染官网入口并排在首位），核到官网就不要让它留在空对象里。
-- `pictures[].url` 必须是绝对 HTTP(S) 地址：相对路径（如 `/assets/covers/x.webp`）会被拒绝为 `invalid_picture`。示例只展示 DTO；实际提交前必须另有权利 sidecar 证据包，官方图源不自动授权复用，缺明确许可时不得使用或计数。
+- `pictures[].url` 必须是绝对 HTTP(S) 地址：相对路径（如 `/assets/covers/x.webp`）会被拒绝为 `invalid_picture`。图片须匹配具体实体/发行版；当前任务的图片操作授权与版权/许可材料分开记录。明确的任务操作授权可在其范围内执行，但不等于权利已核实；权利材料未知时报告 `unknown`，不能写成 `passed`。计数条件按本次批次定义。
 - 图片可带 `version_label`（多语言）、`usage_period: {begin?, end?}`（至少一端非空）、`role`（启用的 `picture_role` 词表码）与 `asset_id`（存储资产 UUID）；使用时段不表示版权期限。数组首项是手动封面，`taken_at` 不决定排序。自托管图片先完成 `cover_image` 绑定，再写 `asset_id` 并回读，流程见[文件上传与绑定](reference-file-upload.md)。
 - **不要**提交顶层 `cover_aspect` / `cover_image_url`：它们不在写入 DTO 里，严格解析会直接 `400 invalid_payload`。
 
@@ -168,7 +171,7 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
     }
 
 `content_unit_id` 可以省略（表达直接挂在 Work 下）；给定时必须属于同一 Work。
-表达是**被 Track 复用的那一层**：同一录音、正文或母版在多个发行里出现时只建一个 expression。
+表达是**被 Track 复用的那一层**：同一录音、正文或母版在多个发行里复用；Work 身份相同不代表 Expression 相同，现场、伴奏、混音等按实际表达区分。
 
 ## release
 
@@ -204,6 +207,7 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
 
 - **`release` 没有 `work_id`**。`subjects` 列出被其载体实际收录表达的**全部** Work；`role` 取 `release_role` 词表
   （`primary` 主作品 / `compilation` 汇编作品 / `supplement` 附加作品）。同一 `(work_id, role)` 只能出现一次。
+- 发行中作为曲目收录的 Work 使用 `track_work` role（可含官方确认的影音作品），且仅在当前 `document.vocabularies.release_role.terms.track_work.enabled` 时可用；它是 Release subject role，不是关系码。先写正确 subjects，再维护 Track contents；两者的跨实体步骤不是原子事务。
 - **发行版的版名由 `title` 承载**：没有 `edition_name` 字段。品番、条码、日期、版本类别、包装等字段码以
   `GET /api/catalog/definitions` 声明为准，未声明的码会被拒绝。
 - 枚举字段填**词项代码**而不是显示名：`packaging` 取 `standard` / `jewel` / `slipcase` / `box` / `boxset` / `digipak`，
@@ -265,6 +269,7 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
 
 - **`contents` 是唯一收录来源**，新版项为 `{expression_id, position, locator, attributes?, sources?}`；先核目标实例 DTO，旧版可能不接受 sources。
   单内容引用走 `contents`（`expression_id` + `position` + `locator`），不要另加引用字段。
+- `Track.contents` 是结构性收录，不是 relations。Release `subjects` 先声明实际收录的 Work，再建立对应 Track contents；两步不具跨实体原子性。
 - **Track 上没有 `work_id`**：所属 Work 由 `medium → release → subjects` 推导。
   提交 `work_id` 会因为不在该 kind 的允许字段里被拒绝。
 - 同一 Track 内 `position` 唯一；同一 `expression_id` **且 locator 完全相同**才算重复收录。
@@ -295,7 +300,7 @@ PUT 是**整实体替换**：先 GET 完整实体，只改需要改的字段，�
       "sources": [{"kind": "url", "citation": "官方曲目表", "url": "https://example.org/disc"}]
     }
 
-expected_version 来自 Track。PUT `/api/catalog/tracks/{id}/contents/{position}` 使用相同信封，URL 为回读的旧位置，inclusion.position 可以重排。DELETE 同路径只提交 expected_version/edit_note/sources；不要省略请求体。写后回读 Track、occurrences 与修订，409 时回读并合并；不要根据不可见记录的猜测位置操作。来源省略/保留口径见[API 行为参考](reference-api-behavior.md)。
+expected_version 来自 Track。PUT `/api/catalog/tracks/{id}/contents/{position}` 使用相同信封，URL 为回读的旧位置，inclusion.position 可以重排。DELETE 同路径只提交 expected_version/edit_note/sources；不要省略请求体。写后回读 Track、occurrences 与修订，409 时回读并合并；不要根据不可见记录的猜测位置操作。不可见收录或旧 position 无法核实时停止该项操作并报告未知。Track contents 来源省略规则见[API 行为参考](reference-api-behavior.md)。
 
 ## 关系
 
@@ -329,7 +334,7 @@ expected_version 来自 Track。PUT `/api/catalog/tracks/{id}/contents/{position
 - `/api/catalog/entities/{id}`（实体本体与 `version`）；
 - `/api/catalog/entities/{id}/relations`（关系与对端实体）；
 - `/api/catalog/entities/{id}/occurrences`（表达/内容单位的反向收录）；
-- `/api/catalog/entities/{id}/revisions`（本次修订快照与证据；行里只有写后 `snapshot`，**没有 `before`/`after`**）；
+- `/api/catalog/entities/{id}/revisions`（核对本次修订与证据；快照及可见性限制见[API 行为参考](reference-api-behavior.md)）；
 - 实例支持时，`/api/catalog/expressions/{id}/composition` 与 `/api/catalog/releases/{id}/editions` 核对直接组成和显式版本组；不由 subjects 推测；
 - 实体对比用 `/api/catalog/compare?ids=<id1>,<id2>`，返回 `items[].entity` 与 `items[].children`；发行/载体的子项形状是 `{medium, tracks}`，其他 kind 的 `children` 为空。
 

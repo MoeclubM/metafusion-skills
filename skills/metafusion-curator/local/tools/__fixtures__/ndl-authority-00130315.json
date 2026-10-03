@@ -1,0 +1,44 @@
+{
+    "@context": "https://id.ndl.go.jp/auth/context.json",
+    "uri": "http://id.ndl.go.jp/auth/ndlna/00130315",
+    "primaryTopic": {
+        "uri": "http://id.ndl.go.jp/auth/entity/00130315",
+        "type": {
+            "uri": "http://xmlns.com/foaf/0.1/Person"
+        },
+        "name": "関口照生",
+        "dateOfBirth": "1938"
+    },
+    "type": {
+        "uri": "http://www.w3.org/2004/02/skos/core#Concept"
+    },
+    "modified": "1983-05-26T00:00:00",
+    "created": "1983-05-26",
+    "prefLabel": {
+        "literalForm": "関口, 照生, 1938-",
+        "transcription": "セキグチ, テルオ, 1938-",
+        "transcription-l": [
+            {
+                "@value": "セキグチ, テルオ, 1938-",
+                "@language": "ja-Kana"
+            },
+            {
+                "@value": "Sekiguchi, Teruo, 1938-",
+                "@language": "ja-Latn"
+            }
+        ]
+    },
+    "label": "関口, 照生, 1938-",
+    "source": [
+        "ガラスの糸の上で",
+        "奥付 (本文・カバーを含む)"
+    ],
+    "exactMatch": [
+        {
+            "uri": "http://viaf.org/viaf/sourceID/NDL%7C00130315#skos:Concept"
+        }
+    ],
+    "inScheme": {
+        "uri": "http://id.ndl.go.jp/auth#personalNames"
+    }
+}

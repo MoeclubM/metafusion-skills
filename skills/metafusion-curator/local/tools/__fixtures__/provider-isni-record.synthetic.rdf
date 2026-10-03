@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic minimal RDF/XML parser fixture; not a captured provider response. -->
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#">
+  <rdf:Description rdf:about="https://isni.org/isni/0000000121389471">
+    <rdfs:label>Daft Punk</rdfs:label>
+  </rdf:Description>
+</rdf:RDF>

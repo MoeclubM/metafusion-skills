@@ -1,0 +1,87 @@
+{
+  "action": "field.create",
+  "expected_etag": "<current-etag>",
+  "field_code": "list_price",
+  "field": {
+    "names": {
+      "zh-CN": "发行定价",
+      "zh-TW": "發行定價",
+      "en-US": "List price",
+      "ja-JP": "希望小売価格"
+    },
+    "type": "list",
+    "unit": null,
+    "applicable_kinds": ["release"],
+    "enabled": true,
+    "required": false,
+    "searchable": false,
+    "comparable": false,
+    "items": {
+      "names": {
+        "zh-CN": "价格记录",
+        "zh-TW": "價格記錄",
+        "en-US": "Price record",
+        "ja-JP": "価格記録"
+      },
+      "type": "group",
+      "unit": null,
+      "enabled": true,
+      "required": false,
+      "searchable": false,
+      "comparable": false,
+      "fields": {
+        "amount": {
+          "names": {
+            "zh-CN": "金额",
+            "zh-TW": "金額",
+            "en-US": "Amount",
+            "ja-JP": "金額"
+          },
+          "type": "number",
+          "unit": null,
+          "min": 0,
+          "enabled": true,
+          "required": true,
+          "searchable": false,
+          "comparable": false
+        },
+        "currency": {
+          "names": {
+            "zh-CN": "币种代码（ISO 4217）",
+            "zh-TW": "幣別代碼（ISO 4217）",
+            "en-US": "Currency code (ISO 4217)",
+            "ja-JP": "通貨コード（ISO 4217）"
+          },
+          "type": "text",
+          "unit": null,
+          "enabled": true,
+          "required": true,
+          "searchable": false,
+          "comparable": false
+        },
+        "tax_included": {
+          "names": {
+            "zh-CN": "含税",
+            "zh-TW": "含稅",
+            "en-US": "Tax included",
+            "ja-JP": "税込"
+          },
+          "type": "boolean",
+          "unit": null,
+          "enabled": true,
+          "required": false,
+          "searchable": false,
+          "comparable": false
+        }
+      }
+    }
+  },
+  "edit_note": "新增发行层级的公开标价字段定义；此字段仅承载发行定价语义，不自动补录任何实体价格。",
+  "sources": [
+    {
+      "kind": "url",
+      "citation": "Bushiroad Music 官方页面按版本明示金额（日元、含税）；此来源仅支持发行定价字段语义，不表示自动补录该页面或任何具体实体价格。",
+      "url": "https://bushiroad-music.com/musics/brmm-11077/"
+    }
+  ]
+}

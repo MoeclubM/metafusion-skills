@@ -1,0 +1,46 @@
+{
+  "_note": "SYNTHETIC fixture: Wikidata Special:EntityData 的最小切片（P213 ISNI / P214 VIAF），用于离线单测；ISNI 值按 ISO 7064 校验位规则生成。",
+  "entities": {
+    "Q54004": {
+      "type": "item",
+      "id": "Q54004",
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Douglas Adams"
+        },
+        "ja": {
+          "language": "ja",
+          "value": "ダグラス・アダムズ"
+        }
+      },
+      "claims": {
+        "P213": [
+          {
+            "mainsnak": {
+              "datavalue": {
+                "value": "0000 0001 2138 9471"
+              }
+            }
+          }
+        ],
+        "P214": [
+          {
+            "mainsnak": {
+              "datavalue": {
+                "value": "https://viaf.org/viaf/102383463"
+              }
+            }
+          },
+          {
+            "mainsnak": {
+              "datavalue": {
+                "value": " 102383463 "
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

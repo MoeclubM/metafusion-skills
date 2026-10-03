@@ -3,7 +3,7 @@ import { afterEach, test } from "node:test";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
-import { mergeEntity, unionInto } from "./mf-lib.mjs";
+import { mergeEntity, unionInto, identityConflicts } from "./mf-lib.mjs";
 import { checkBangumi, checkMusicBrainz } from "./mf-audit-external-ids.mjs";
 
 process.env.MF_BASE = "https://example.com";
@@ -229,4 +229,28 @@ test("抽样关系读取失败不得声称全部结构合规", async () => {
     assert.ok(logs.some((line) => line.includes("结论未确认")));
     assert.ok(logs.every((line) => !line.includes("全部 100%")));
   });
+});
+// ── 2026-10-03 merge-safe-apply 回归：expression 的 version_label 是身份字段 ──
+const expr = (id, extras = {}) => ({ id, kind: "expression", title: "DRIVE US CRAZY", version: 2,
+  status: "published", translations: { "ja-JP": { title: "DRIVE US CRAZY" } }, attributes: {}, external_ids: {}, pictures: [], ...extras });
+test("expression version_label 两侧不等 → 身份冲突", () => {
+  const a = expr("a", { attributes: { version_label: "Studio Recording" } });
+  const b = expr("b", { attributes: { version_label: "Live, 東京公演" } });
+  const cs = identityConflicts(a, b);
+  assert.ok(cs.some(c => String(c).includes("version_label")), "必须拒绝：不同录音版本");
+});
+test("expression version_label 单侧缺失 → 身份冲突（禁止把现场标签并进无标签录音室表达）", () => {
+  const a = expr("a", {});
+  const b = expr("b", { attributes: { version_label: "RUMBLEHEADZ DAY2" } });
+  assert.ok(identityConflicts(a, b).some(c => String(c).includes("version_label")));
+});
+test("expression 两侧都无 version_label → 不因该字段拒绝（其余守卫仍适用）", () => {
+  const a = expr("a", {});
+  const b = expr("b", { attributes: {} });
+  assert.ok(!identityConflicts(a, b).some(c => String(c).includes("version_label")));
+});
+test("非 expression（work 同名双胞胎）不受 version_label 单侧缺失影响", () => {
+  const a = expr("a", { kind: "work" });
+  const b = expr("b", { kind: "work", attributes: { version_label: "X" } });
+  assert.ok(!identityConflicts(a, b).some(c => String(c).includes("version_label")));
 });

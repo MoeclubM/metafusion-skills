@@ -1,0 +1,102 @@
+{
+  "alternate_locations": {
+    "servers": [
+      {
+        "server": "dn720305.ca.archive.org",
+        "dir": "/0/items/hot-buttered-rum-internet-archive-2022"
+      }
+    ],
+    "workable": [
+      {
+        "server": "dn720305.ca.archive.org",
+        "dir": "/0/items/hot-buttered-rum-internet-archive-2022"
+      }
+    ]
+  },
+  "created": 1790983955,
+  "d1": "dn601202.us.archive.org",
+  "dir": "/0/items/hot-buttered-rum-internet-archive-2022",
+  "files": [
+    {
+      "name": "__ia_thumb.jpg",
+      "source": "original",
+      "mtime": "1656439244",
+      "size": "7764",
+      "md5": "dd2e66921ce27a0f50c9f50fbe259c44",
+      "crc32": "6d1074f8",
+      "sha1": "a1bee8f36c83d04811503fbc2c6ab308627adf55",
+      "format": "Item Tile",
+      "rotation": "0"
+    },
+    {
+      "name": "hot-buttered-rum-internet-archive-2022.thumbs/hot-buttered-rum_000001.jpg",
+      "source": "derivative",
+      "format": "Thumbnail",
+      "original": "hot-buttered-rum.mp4",
+      "mtime": "1656439160",
+      "size": "25729",
+      "md5": "70c4a66159b3f5593b51f4d34df009e5",
+      "crc32": "908f802a",
+      "sha1": "9f6bf909c630525579bd5801c64aa98e86790407"
+    },
+    {
+      "name": "hot-buttered-rum-internet-archive-2022.thumbs/hot-buttered-rum_000059.jpg",
+      "source": "derivative",
+      "format": "Thumbnail",
+      "original": "hot-buttered-rum.mp4",
+      "mtime": "1656439161",
+      "size": "28247",
+      "md5": "e49f52e8eb38b5963cccb214623087f1",
+      "crc32": "03e1b02e",
+      "sha1": "bde17a1d78b75ac91b9962a7420fa7ae43cd5a8e"
+    },
+    {
+      "name": "hot-buttered-rum-internet-archive-2022.thumbs/hot-buttered-rum_000101.jpg",
+      "source": "derivative",
+      "format": "Thumbnail",
+      "original": "hot-buttered-rum.mp4",
+      "mtime": "1656439163",
+      "size": "37773",
+      "md5": "8c982429a49d42863c3d3c9bbdbaaee9",
+      "crc32": "ff249ded",
+      "sha1": "0f6c139c9a5fae7c8ffcd891fba9214772c03e0a"
+    }
+  ],
+  "files_count": 34,
+  "item_last_updated": 1774242476,
+  "item_size": 166539684,
+  "metadata": {
+    "identifier": "hot-buttered-rum-internet-archive-2022",
+    "collection": [
+      "essential-music-concerts-from-home",
+      "audio_music"
+    ],
+    "mediatype": "movies",
+    "scanner": "Internet Archive Python library 2.2.0",
+    "subject": "Hot Buttered Rum",
+    "title": "Hot Buttered Rum - Musiczoom for Internet Archive",
+    "uploader": "kaplan@archive.org",
+    "publicdate": "2022-06-28 17:58:31",
+    "addeddate": "2022-06-28 17:58:31",
+    "description": "<span style=\"color:rgb(29,28,29);font-family:'Slack-Lato', 'Slack-Fractions', appleLogo, sans-serif;font-size:15px;background-color:rgb(248,248,248);\">Erik spent his Bay Area youth trying nearly every instrument and style he came across. College in Portland, OR, where he studied music and writing, brought new musical horizons, new conspirators (including classmate Nat Keefe) and a new project, Hot Buttered Rum, which quickly took over his life for two sweet decades. The group has become a platform for all his various trades, musical and otherwise. It constantly pushes his banjo and guitar picking, his singing and his songwriting, which he now combines with producing, teaching, and collaborating with a variety of Bay Area artists. Erik has appeared with songwriters Peter Rowan, Tim and Nikki Bluhm, and banjoist Bill Evans (also his teacher). When not on the road with HBR, Erik can be found playing around California and touring in support of his solo album, </span><i style=\"color:rgb(29,28,29);font-family:'Slack-Lato', 'Slack-Fractions', appleLogo, sans-serif;font-size:15px;background-color:rgb(248,248,248);\">Give it Time, </i><span style=\"color:rgb(29,28,29);font-family:'Slack-Lato', 'Slack-Fractions', appleLogo, sans-serif;font-size:15px;background-color:rgb(248,248,248);\">out on Floating Records.</span><span class=\"c-mrkdwn__br\" style=\"height:8px;color:rgb(29,28,29);font-family:'Slack-Lato', 'Slack-Fractions', appleLogo, sans-serif;font-size:15px;background-color:rgb(248,248,248);\"></span><span style=\"color:rgb(29,28,29);font-family:'Slack-Lato', 'Slack-Fractions', appleLogo, sans-serif;font-size:15px;background-color:rgb(248,248,248);\">Erik will be performing with a side project at Peri's in Fairfax on June 10 and with Hot Buttered Rum at the Hog Farm Hangout in Laytonville, CA on June 11 &amp; 12. HBR will also be singing the national anthem before the Giants game at Oracle park on June 15 and performing as part of the Jazz Aspen concert series in Snowmass, Colorado on June 16.</span><span class=\"c-mrkdwn__br\" style=\"height:8px;color:rgb(29,28,29);font-family:'Slack-Lato', 'Slack-Fractions', appleLogo, sans-serif;font-size:15px;background-color:rgb(248,248,248);\"><br /></span><span class=\"c-mrkdwn__br\" style=\"height:8px;color:rgb(29,28,29);font-family:'Slack-Lato', 'Slack-Fractions', appleLogo, sans-serif;font-size:15px;background-color:rgb(248,248,248);\"></span><a class=\"c-link\" href=\"https://www.hotbutteredrum.net/\" style=\"font-family:'Slack-Lato', 'Slack-Fractions', appleLogo, sans-serif;font-size:15px;background-color:rgb(248,248,248);\" rel=\"ugc nofollow\">https://www.hotbutteredrum.net/</a><span class=\"c-mrkdwn__br\" style=\"height:8px;color:rgb(29,28,29);font-family:'Slack-Lato', 'Slack-Fractions', appleLogo, sans-serif;font-size:15px;background-color:rgb(248,248,248);\"></span><a class=\"c-link\" href=\"https://archive.org/details/HotButteredRum\" style=\"font-family:'Slack-Lato', 'Slack-Fractions', appleLogo, sans-serif;font-size:15px;background-color:rgb(248,248,248);\" rel=\"ugc nofollow\">https://archive.org/details/HotButteredRum</a><span class=\"c-message__edited_label\" dir=\"ltr\" style=\"font-size:13px;white-space:nowrap;font-family:'Slack-Lato', 'Slack-Fractions', appleLogo, sans-serif;background-color:rgb(248,248,248);\"> (edited) </span>",
+    "sound": "sound",
+    "color": "color"
+  },
+  "server": "dn601202.us.archive.org",
+  "simplelists": {
+    "solo_manifest": {
+      "solo_manifest_dn601202": {
+        "sys_changed_by": {
+          "source": "task",
+          "task_id": "5454827366"
+        },
+        "sys_last_changed": "2026-06-20 22:32:51.67536"
+      }
+    }
+  },
+  "solo": true,
+  "uniq": 453707655,
+  "workable_servers": [
+    "dn601202.us.archive.org"
+  ]
+}

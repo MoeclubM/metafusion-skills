@@ -73,7 +73,21 @@ export const IDENTITY_KEYS = [
 ];
 
 /** 参与"身份"判定的属性码：这些值不同即不是同一版次/同一物。 */
-export const IDENTITY_ATTRS = ["duration", "edition_date", "barcode", "isbn", "catalog_number", "edition_type"];
+export const IDENTITY_ATTRS = ["duration", "edition_date", "barcode", "isbn", "catalog_number", "edition_type", "version_label"];
+
+/**
+ * expression 的 version_label 是"录音版本"身份字段（2026-10-03 merge-safe-apply 实证：
+ * 22 组被审计判为同作用域重复的 expression 实为录音室/现场/不同公演的不同表达，
+ * "一侧有标签一侧无"同样不可并——unionInto 会把现场标签盖到录音室表达上）。
+ * 因此对 kind=expression，任何一侧非空且两侧不相等（含 null/"" vs 有值）即身份冲突。
+ */
+export function expressionVersionLabelConflict(keep, lose) {
+  const a = keep?.attributes?.version_label ?? null;
+  const b = lose?.attributes?.version_label ?? null;
+  if (a == null && b == null) return null;
+  if (a == null || b == null) return "attributes.version_label(单侧缺失)";
+  return j(a) === j(b) ? null : "attributes.version_label";
+}
 
 const canonical = (v) => Array.isArray(v) ? v.map(canonical)
   : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical(v[k])])) : v;
@@ -95,6 +109,10 @@ export function identityConflicts(keep, lose) {
     const a = keep.attributes?.[k];
     const b = lose.attributes?.[k];
     if (a != null && b != null && j(a) !== j(b)) out.push(`attributes.${k}`);
+  }
+  if (String(keep.kind || "").toLowerCase() === "expression" || String(lose.kind || "").toLowerCase() === "expression") {
+    const c = expressionVersionLabelConflict(keep, lose);
+    if (c && !out.includes(c)) out.push(c);
   }
   return out;
 }

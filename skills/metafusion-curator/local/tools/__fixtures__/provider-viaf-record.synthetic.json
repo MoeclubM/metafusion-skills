@@ -1,0 +1,10 @@
+{
+  "_fixture_note": "Synthetic VIAF record-shape fixture for offline parsing; not a captured provider response.",
+  "viafID": "59163545",
+  "nameType": "Personal",
+  "mainHeadings": {
+    "data": [
+      { "text": "Turing, Alan, 1912-1954" }
+    ]
+  }
+}

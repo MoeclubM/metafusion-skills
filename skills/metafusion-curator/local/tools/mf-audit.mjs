@@ -19,6 +19,7 @@
 // 区分 soft_deleted / merged / missing / kind_mismatch。limit 上限 100（200 -> 400 invalid_limit）。
 import fs from "node:fs";
 import path from "node:path";
+import { collectPages } from "../metafusion-api.mjs";
 
 // ── 客户端：统一走技能自带 metafusion-api.mjs（PAT 认证），本脚本不再自带 HTTP 客户端 ──
 import { call as mfCall, scopeKey as entityScopeKey } from "./mf-lib.mjs";
@@ -40,24 +41,17 @@ async function call(p) {
   return { status: r.status, body: r.body };
 }
 
-async function listAll(kind) {
-  const seen = new Map();
-  let offset = 0, total = null, pages = 0, shortPage = false;
-  for (;;) {
-    const r = await call("/api/catalog/entities?kind=" + kind + "&limit=100&offset=" + offset);
-    if (r.status !== 200) throw new Error("列表失败 kind=" + kind + " offset=" + offset + " -> " + r.status);
-    if (total === null) total = r.body && typeof r.body.total === "number" ? r.body.total : null;
-    if (!Array.isArray(r.body?.items)) throw new Error("列表载荷缺少 items kind=" + kind);
-    const items = r.body.items;
-    for (const it of items) seen.set(it.id, it);
-    pages++;
-    if (items.length < 100) { shortPage = true; break; }
-    offset += 100;
-    if (offset > 200000) throw new Error("分页超过上限，审计未完成 kind=" + kind);
-    await sleep(100);
-  }
-  const items = [...seen.values()];
-  return { items: items, total: total, pages: pages, shortPage: shortPage, unique: items.length };
+async function collectKind(kind) {
+  let first = true;
+  return collectPages("/api/catalog/entities", {
+    params: { kind },
+    limit: 100,
+    requestFn: async (pathname) => {
+      if (!first) await sleep(100);
+      first = false;
+      return mfCall(pathname);
+    },
+  });
 }
 
 const resolved = new Map();
@@ -92,12 +86,19 @@ const byKind = {};
 const all = new Map();
 const listMeta = {};
 for (const kind of KINDS) {
-  const r = await listAll(kind);
-  byKind[kind] = r.items;
-  for (const it of r.items) all.set(it.id, it);
-  listMeta[kind] = { total: r.total, unique: r.unique, pages: r.pages, shortPage: r.shortPage };
-  console.log("  " + kind.padEnd(13) + " total=" + r.total + " unique=" + r.unique + " pages=" + r.pages
-    + (r.total !== null && r.total !== r.unique ? "  !! 与 total 不一致" : ""));
+  const { items, coverage } = await collectKind(kind);
+  if (!coverage.complete) {
+    const statuses = [...new Set(coverage.failures.map((failure) => failure.status).filter((status) => Number.isInteger(status) && status > 0))];
+    const statusText = statuses.length ? ` HTTP ${statuses.join(",")}` : "";
+    const error = new Error(`列表读取不完整 kind=${kind}${statusText}；coverage=${JSON.stringify(coverage)}`);
+    error.coverage = coverage;
+    throw error;
+  }
+  byKind[kind] = items;
+  for (const it of items) all.set(it.id, it);
+  listMeta[kind] = coverage;
+  console.log("  " + kind.padEnd(13) + " total=" + coverage.total + " raw=" + coverage.rawCount + " unique=" + coverage.uniqueCount + " pages=" + coverage.pages
+    + (coverage.complete ? "" : "  !! coverage 不完整"));
 }
 console.log("共 " + all.size + " 个可见实体；用时 " + ((Date.now() - t0) / 1000).toFixed(1) + "s");
 
@@ -328,9 +329,10 @@ console.log("附加统计：展示型 kind 缺封面 " + pictureGapDisplay + " /
 
 // ---------- 写出 ----------
 fs.mkdirSync(OUT_DIR, { recursive: true });
-const listComplete = Object.values(listMeta).every((m) => m.shortPage && m.total === m.unique);
+const listComplete = Object.values(listMeta).every((m) => m.complete);
 const report = {
-  coverage: { list_complete: listComplete, subject_checks_unknown: releaseCoverMiss.length,
+  coverage: { basis: "仅当前调用者可见的实体列表范围；不证明全库、来源或身份完整",
+    list_complete: listComplete, by_kind: listMeta, subject_checks_unknown: releaseCoverMiss.length,
     current_sources_verified: false, cover_rights_verified: false, duplicate_identity_verified: false },
   generated_at: new Date().toISOString(),
   base: BASE,
@@ -383,16 +385,20 @@ L.push("# 全站数据质量缺口清单（只读审计）");
 L.push("");
 L.push("- 生成时间：" + report.generated_at);
 L.push("- 目标实例：" + BASE);
-L.push("- 口径：纯只读，只发 GET /api/catalog/entities（分页 limit=100）与 GET /api/catalog/entities/{id}（复核不可见父级）。未创建/修改/删除任何实体。");
+L.push("- 口径：纯只读，只发 GET /api/catalog/entities（分页 limit=100）与 GET /api/catalog/entities/{id}（复核不可见父级）。coverage 仅代表当前调用者可见列表范围；未创建/修改/删除任何实体。");
 L.push("- 机读版：docs-local/data-quality/gap-report.json");
 L.push("");
 L.push("## 0. 总量与分页核对");
 L.push("");
-L.push("| kind | 可见实体 | 列表 total | 唯一 id | 页数 |");
-L.push("| --- | --- | --- | --- | --- |");
+L.push("| kind | total | raw | 唯一 id | 页数 | 分页完整 |");
+L.push("| --- | --- | --- | --- | --- | --- |");
 let sumK = 0;
-for (const k of KINDS) { sumK += byKind[k].length; L.push("| " + k + " | " + byKind[k].length + " | " + (listMeta[k].total == null ? "-" : listMeta[k].total) + " | " + listMeta[k].unique + " | " + listMeta[k].pages + " |"); }
-L.push("| 合计 | " + sumK + " | | | |");
+for (const k of KINDS) { sumK += byKind[k].length; L.push("| " + k + " | " + (listMeta[k].total == null ? "-" : listMeta[k].total) + " | " + listMeta[k].rawCount + " | " + listMeta[k].uniqueCount + " | " + listMeta[k].pages + " | " + (listMeta[k].complete ? "是" : "否") + " |"); }
+const allListMeta = Object.values(listMeta);
+const totalSum = allListMeta.every((m) => m.total !== null) ? allListMeta.reduce((sum, m) => sum + m.total, 0) : null;
+const rawSum = allListMeta.reduce((sum, m) => sum + m.rawCount, 0);
+const uniqueSum = allListMeta.reduce((sum, m) => sum + m.uniqueCount, 0);
+L.push("| 合计 | " + (totalSum ?? "-") + " | " + rawSum + " | " + uniqueSum + " | — | " + (listComplete ? "是" : "否") + " |");
 L.push("");
 L.push("## 1. 缺封面（pictures 为空）");
 L.push("");

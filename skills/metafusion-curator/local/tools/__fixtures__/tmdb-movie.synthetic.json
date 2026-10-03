@@ -1,0 +1,24 @@
+{
+  "_note": "SYNTHETIC fixture: 本机无 TMDB key，按 TMDB 官方文档的响应结构手写，仅用于离线单测（字段名与真实响应一致）。",
+  "adult": false,
+  "backdrop_path": "/fCayJRKf0gKb9W1z0iu7v8Q9B3F.jpg",
+  "genre_ids": [
+    18,
+    9648
+  ],
+  "homepage": "https://www.example.com/official-film-site",
+  "id": 550,
+  "imdb_id": "tt0137523",
+  "original_language": "en",
+  "original_title": "Fight Club",
+  "overview": "官方简介文本（合成样本）。",
+  "popularity": 60.5,
+  "poster_path": "/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg",
+  "release_date": "1999-10-15",
+  "runtime": 139,
+  "status": "Released",
+  "tagline": "Misery loves company",
+  "title": "ファイト・クラブ",
+  "vote_average": 8.4,
+  "vote_count": 25000
+}

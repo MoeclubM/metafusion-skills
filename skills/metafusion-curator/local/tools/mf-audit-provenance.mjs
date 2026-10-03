@@ -8,7 +8,7 @@
 // 产出：docs-local/data-campaign/logs/provenance-audit.json（可用 MF_AUDIT_OUT 改目录）
 
 import fs from "node:fs";
-import { KINDS, call, sleep } from "./mf-lib.mjs";
+import { KINDS, call, listKind, sleep } from "./mf-lib.mjs";
 
 const OUT_DIR = process.env.MF_AUDIT_OUT || "docs-local/data-campaign/logs";
 const CONCURRENCY = Number(process.env.MF_CONCURRENCY || 20);
@@ -26,21 +26,9 @@ async function get(p) {
   return r.body;
 }
 
-async function listAll(kind) {
-  const out = [];
-  for (let off = 0; ; off += 100) {
-    const body = await get(`/api/catalog/entities?kind=${kind}&limit=100&offset=${off}`);
-    if (!Array.isArray(body?.items)) throw new Error("实体列表缺少 items");
-    const items = body.items;
-    out.push(...items);
-    if (items.length < 100) break;
-  }
-  return [...new Map(out.map((e) => [e.id, e])).values()];
-}
-
 const all = [];
 for (const k of KINDS) {
-  const items = await listAll(k);
+  const items = await listKind(k);
   console.log(`${k}: ${items.length}`);
   for (const it of items) all.push({ id: it.id, kind: k, title: it.title, status: it.status });
 }
