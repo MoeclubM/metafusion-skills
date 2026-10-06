@@ -240,8 +240,18 @@ class RelationshipQueryHTTPTests(unittest.TestCase):
         self.assertEqual(out, '')
         self.assertIn('Invalid JSON response', err)
 
+    def test_deep_relationship_page_is_sent_to_the_api(self):
+        status, out, err = self.invoke('--id', EXPRESSION, '--offset', '10001')
+        self.assertEqual(status, 0, err)
+        self.assertEqual(self.requests[-1][1]['offset'], 10001)
+        page = json.loads(out)['pages'][0]
+        self.assertEqual(page['offset'], 10001)
+        self.assertEqual(page['items'], [])
+        self.assertFalse(page['has_more'])
+
     def test_invalid_cli_parameters_make_no_http_requests(self):
-        for args in (('--id', 'bad'), ('--id', EXPRESSION, '--limit', '101'), ('--rules', '--id', EXPRESSION)):
+        for args in (('--id', 'bad'), ('--id', EXPRESSION, '--limit', '101'),
+                     ('--id', EXPRESSION, '--offset', '-1'), ('--rules', '--id', EXPRESSION)):
             with self.subTest(args=args), contextlib.redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit) as failure:
                     self.invoke(*args)

@@ -72,8 +72,8 @@ def main(argv=None):
         parser.error('--base-url must be an HTTP(S) instance URL without credentials, query or fragment')
     if not 1 <= args.timeout <= 120:
         parser.error('--timeout must be between 1 and 120 seconds')
-    if not 1 <= args.limit <= 100 or not 0 <= args.offset <= 10000:
-        parser.error('--limit must be 1..100 and --offset 0..10000')
+    if not 1 <= args.limit <= 100 or args.offset < 0:
+        parser.error('--limit must be 1..100 and --offset must be nonnegative')
     if args.rules and (args.ids or args.rule_code or args.peer_kind or args.direction != 'both' or args.offset):
         parser.error('--rules cannot be combined with entity-query filters')
     try:
