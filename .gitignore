@@ -1,6 +1,7 @@
 # 本机状态、凭据、未执行的数据修订计划不属于技能安装包。
 docs-local/
 plans-*/
+/__pending_*.json
 .playwright-cli/
 __pycache__/
 *.pyc
