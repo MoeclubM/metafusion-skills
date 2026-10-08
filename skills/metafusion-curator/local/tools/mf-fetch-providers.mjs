@@ -420,6 +420,22 @@ export const PROVIDER_MATRIX = {
     note: "无公开 API（官方 XML API 只对订阅者开放）。站内页面对本机返回 Cloudflare 403 挑战页；图片 CDN medium-media.vgm.io 可匿名 200。页面不含 JSON-LD（实测 0 个 ld+json script、无 microdata itemtype），字段在 table#album_infobit_large 的 label/value 行与 span.albumtitle[lang]，因此实现为 HTML 解析 + Internet Archive id_ 原样存档读取（parseVgmdbAlbumHtml 可离线复用）。",
     verifiedAt: "2026-10-03",
   },
+ itunes: {
+   label: "iTunes Store", access: "anonymous", authority: "official",
+   baseUrl: "https://itunes.apple.com",
+   entities: ["search", "album"],
+   rateLimit: "约 20 calls/min（Apple Search API 文档口径）；实测连续低量请求未见限流",
+   note: "免费 Search API，GET /search（term + media=music&entity=album）与 GET /lookup（id、entity=song 返回 collection + track 曲目）均匿名可用、无需 key。2026-10-08 实测：响应 content-type 为 text/javascript，但 body 是合法 JSON；不存在的 collectionId 与空检索都返回 HTTP 200 + resultCount:0 —— not_found 按 resultCount=0 判定，不能只看 HTTP 状态；jp storefront 检索「まいてつ」只返回模糊匹配的无关专辑、「Maitetsu」0 命中（该作未上架 JPN storefront），检索「AQUAPLUS」命中游戏音乐专辑（collectionId 541874266，10 曲）。2026-10-09 实测：artworkUrl100 改写 60–3000px 可用、超 3000 回退 3000，可换 png/webp（images 给多尺寸候选）；封面 URL 的原图文件名段常常就是发行方编号（如 4538182209493_cov.jpg、4547366532999.jpg），itunesArtworkBarcode 不做硬校验、按 6–14 位数字开头提取为 release_number / barcode_candidate 候选并附 scheme 与 checksum_valid 提示，全部交由 agent 按技能核实确认（数字发行可能用独立编号、沿用实体版条码或没有编号，Apple 响应本身不含 UPC/barcode 字段）。storefront 用 country=<两字母> 覆盖，默认 jp。文档：https://performance-partners.apple.com/search-api 。",
+   verifiedAt: "2026-10-08",
+ },
+  steam: {
+    label: "Steam 商店", access: "anonymous", authority: "official",
+    baseUrl: "https://store.steampowered.com",
+    entities: ["app（appdetails，按 AppID）", "search（storesearch，按名称）"],
+    rateLimit: "Steam 商店接口口径：100,000 calls/day 且 200 calls/5 min（约 1 call/1.5s）；本模块同主机 ≥300ms 串行，批量导入时按 200/5min 自行限速",
+    note: "Valve 官方商店接口，匿名可读、无需 key。2026-10-08 本机实测：GET /api/appdetails?appids=<id>&l=<lang>&cc=<cc> 返回 {\"<id>\":{success,data}}，AppID 不存在是 HTTP 200 + success:false（不是 404），appids=0 是 HTTP 400 且 body 为 null；不写 cc 时区域与币种按请求来源地解析（本机实测 JPY），可复现的定价必须显式 cc=；发行日期随 l= 本地化（\"2018 年 1 月 25 日\"/\"2018年1月25日\"/\"Jan 25, 2018\"）。GET /api/storesearch/?term=&l=&cc= 返回 {total,items}。steamdb.info 是第三方聚合站、对机读返回 HTTP 403 自有拦截页（无 Cloudflare 挑战特征），只作人工交叉核对，连接器不抓取它，只从它的 /app/<id>/ 链接取 AppID。商店页署名（developers/publishers）与价格由发行商与 Valve 提供，写入目录前仍按字段来源策略逐项核对。",
+    verifiedAt: "2026-10-08",
+  },
 };
 
 for (const entry of Object.values(PROVIDER_MATRIX)) {
@@ -1776,6 +1792,638 @@ export async function fetchVgmdbAlbumViaArchive(idOrUrl, opts) {
   return parsed;
 }
 
+// ───────────────────────── 12. iTunes Store ─────────────────────────
+// 免费 Search API（无需 key）：/search 检索 album 候选，/lookup 按 collectionId 取专辑与曲目（entity=song）。
+// 2026-10-08 实测：content-type 为 text/javascript 但 body 是合法 JSON；不存在的 id 与空结果都是
+// HTTP 200 + resultCount:0，因此 not_found 只按 resultCount/results 判，不按 HTTP 状态判。
+
+const ITUNES_DEFAULT_STOREFRONT = "jp";
+
+/** itunes 单参数末尾可选 `country=xx` 覆盖 storefront；返回 { value, storefront }，未写时 storefront 为 null。 */
+export function splitItunesStorefrontArg(raw) {
+  const text = String(raw == null ? "" : raw).trim();
+  const m = text.match(/(?:^|\s)country=(\S*)\s*$/i);
+  if (!m) return { value: text, storefront: null };
+  const code = String(m[1] || "").toLowerCase();
+  if (!/^[a-z]{2}$/.test(code)) {
+    throw new ProviderError("bad_input", "itunes",
+      "country= 需要两字母 storefront 代码（如 jp / us），实际：" + String(m[1] || "").slice(0, 20));
+  }
+  return { value: text.slice(0, m.index).trim(), storefront: code };
+}
+
+/** 参数后缀优先，其次 opts.storefront，最后默认 jp。 */
+function itunesStorefront(argValue, optValue) {
+  const chosen = argValue || (optValue == null ? "" : String(optValue).trim().toLowerCase()) || ITUNES_DEFAULT_STOREFRONT;
+  if (!/^[a-z]{2}$/.test(chosen)) {
+    throw new ProviderError("bad_input", "itunes", "storefront 需要两字母代码（如 jp / us），实际：" + String(chosen).slice(0, 20));
+  }
+  return chosen;
+}
+
+/** 接受纯数字 collectionId（1–12 位）或 music.apple.com/.../album/.../<数字> 链接（含 ?i= 曲目参数）。 */
+export function normalizeItunesCollectionId(input) {
+  const text = String(input == null ? "" : input).trim();
+  if (/^\d{1,12}$/.test(text)) return text;
+  const m = text.match(/music\.apple\.com\/(?:[a-z]{2}\/)?album\/(?:[^/?#]*\/)?(\d{1,12})/i);
+  if (m) return m[1];
+  throw new ProviderError("bad_input", "itunes",
+    "无法解析 iTunes collectionId：" + text.slice(0, 80) + "（需要 1–12 位数字或 music.apple.com/.../album/<数字 ID> 链接）");
+}
+
+/** mzstatic 封面 URL 形状：base 末段是原图文件名，再跟 <WxH>bb<ext> 尺寸段。 */
+const MZSTATIC_ARTWORK_RE = /^(https?:\/\/[^?#]+?)\/(\d+)x(\d+)bb(\.[A-Za-z]+)$/;
+const ITUNES_ARTWORK_MIN = 60;
+const ITUNES_ARTWORK_MAX = 3000;
+
+/** 实测 2026-10-09：mzstatic 只认到 3000px，更大尺寸回退到 3000（同一字节数）。 */
+export const ITUNES_ARTWORK_SIZES = [60, 100, 170, 300, 600, 1200, 3000];
+
+function itunesArtworkPx(size) {
+  return Math.min(ITUNES_ARTWORK_MAX, Math.max(ITUNES_ARTWORK_MIN, Number(size) || 600));
+}
+
+/**
+ * artworkUrl100 → 指定尺寸。实测 2026-10-09：改写 <WxH>bb<ext> 得 200；60–3000px 可用，
+ * 超过 3000 回退到 3000（同一字节数）；ext 可换 png/webp（实测 600x600bb.png / .webp 返回对应 content-type）。
+ * 形状不识别时原样返回。
+ */
+export function itunesArtworkUrl(url, size, ext) {
+  const raw = String(url == null ? "" : url).trim();
+  if (!raw) return null;
+  const m = raw.match(MZSTATIC_ARTWORK_RE);
+  if (!m) return raw;
+  const px = itunesArtworkPx(size);
+  const suffix = ext ? "." + String(ext).replace(/^\./, "") : m[4];
+  return m[1] + "/" + px + "x" + px + "bb" + suffix;
+}
+
+/** 同一张封面按尺寸列表产出 URL 映射（默认 ITUNES_ARTWORK_SIZES）；非 mzstatic 形状返回 null。 */
+export function itunesArtworkSizes(url, sizes) {
+  const raw = String(url == null ? "" : url).trim();
+  if (!raw || !MZSTATIC_ARTWORK_RE.test(raw)) return null;
+  const list = Array.isArray(sizes) && sizes.length ? sizes : ITUNES_ARTWORK_SIZES;
+  const out = {};
+  for (const s of list) out[String(itunesArtworkPx(s))] = itunesArtworkUrl(raw, s);
+  return out;
+}
+
+/** GTIN（EAN-8 / UPC-A / EAN-13 / GTIN-14）校验位：从右往左权重 3,1,3,1…。只作提示，不用来过滤。 */
+function gtinCheckDigitValid(digits) {
+  if (!/^\d+$/.test(digits)) return false;
+  const rev = digits.split("").reverse();
+  let sum = 0;
+  for (let i = 1; i < rev.length; i += 1) sum += Number(rev[i]) * (i % 2 === 1 ? 3 : 1);
+  return (10 - (sum % 10)) % 10 === Number(rev[0]);
+}
+
+const GTIN_SCHEMES = { 8: "ean-8", 12: "upc-a", 13: "ean-13", 14: "gtin-14" };
+
+/** 取 mzstatic 封面 URL 的"原图文件名"段（去掉末尾 <WxH>bb<ext> 尺寸段）。 */
+function itunesArtworkFileName(url) {
+  let pathname;
+  try { pathname = new URL(String(url == null ? "" : url).trim()).pathname; } catch { return null; }
+  const segs = pathname.split("/").filter(Boolean);
+  if (!segs.length) return null;
+  const last = segs[segs.length - 1];
+  if (/^\d+x\d+bb(\.[A-Za-z]+)?$/.test(last) && segs.length >= 2) return segs[segs.length - 2];
+  return last;
+}
+
+/**
+ * 从封面 URL 文件名段提取"发行编号候选"。Apple 的 artworkUrl 原图文件名常常就是发行方编号
+ * （如 4538182209493_cov.jpg / 4547366532999.jpg），但也可能是内部命名（dj.lxhnqrgt.jpg）或艺人图；
+ * 且数字发行可能用独立编号、沿用实体版条码或没有编号。这里**不做硬校验**：只要文件名以一段
+ * 6–14 位数字开头、后接分隔符或结尾就原样给出候选，并附带 GTIN 标准名（位数匹配时）与校验位是否
+ * 通过作为提示，全部交人工核对。识别不出数字编号段时返回 null。
+ */
+export function itunesArtworkBarcode(url) {
+  const name = itunesArtworkFileName(url);
+  if (!name) return null;
+  const stem = name.split(".")[0];
+  const m = stem.match(/^(\d{6,14})(?:[._-]|$)/);
+  if (!m) return null;
+  const code = m[1];
+  return {
+    value: code,
+    source: "apple_artwork_filename",
+    scheme: GTIN_SCHEMES[code.length] || null,
+    checksum_valid: gtinCheckDigitValid(code),
+  };
+}
+
+/** 封面块：image_url(600) + 多尺寸 images + 文件名提取的编号候选（release_number，可能为 null）。 */
+function itunesArtworkBlock(artworkUrl) {
+  const barcode = itunesArtworkBarcode(artworkUrl);
+  return {
+    image_url: itunesArtworkUrl(artworkUrl, 600),
+    images: itunesArtworkSizes(artworkUrl),
+    release_number: barcode ? Object.assign({}, barcode, { kind: "candidate" }) : null,
+  };
+}
+
+/** "2021-10-18T07:00:00Z" → "2021-10-18"；其他形态退回 isoDate（只产出能确证的日期）。 */
+function itunesReleaseDate(value) {
+  const s = String(value == null ? "" : value).trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})T/);
+  return m ? m[1] : isoDate(s);
+}
+
+/** search 候选项保留的原始字段子集（便于逐字核对，同时避免整条响应膨胀）。 */
+const ITUNES_COLLECTION_KEYS = [
+  "wrapperType", "collectionType", "artistId", "collectionId", "artistName", "collectionName",
+  "collectionCensoredName", "artistViewUrl", "collectionViewUrl", "artworkUrl60", "artworkUrl100",
+  "collectionPrice", "collectionExplicitness", "trackCount", "copyright", "country", "currency",
+  "releaseDate", "primaryGenreName",
+];
+
+function itunesItemSlice(item, keys) {
+  const out = {};
+  for (const key of keys) if (item[key] !== undefined && item[key] !== null) out[key] = item[key];
+  return out;
+}
+
+function mapItunesSearchHit(r, storefront) {
+  const artwork = itunesArtworkBlock(r.artworkUrl100);
+  return {
+    id: String(r.collectionId),
+    title: clean(r.collectionName),
+    artist: clean(r.artistName),
+    artist_id: r.artistId != null ? String(r.artistId) : null,
+    release_date: itunesReleaseDate(r.releaseDate),
+    release_date_raw: clean(r.releaseDate),
+    track_count: Number.isFinite(r.trackCount) ? Number(r.trackCount) : null,
+    country: clean(r.country),
+    storefront: storefront,
+    url: clean(r.collectionViewUrl),
+    image_url: artwork.image_url,
+    images: artwork.images,
+    release_number: artwork.release_number,
+    explicitness: clean(r.collectionExplicitness),
+    raw: itunesItemSlice(r, ITUNES_COLLECTION_KEYS),
+  };
+}
+
+/** album 候选检索；单参数支持末尾 `country=xx`（默认 jp，本仓库以日系音乐为主）。 */
+export async function searchItunes(query, opts) {
+  const o = opts || {};
+  const parsed = splitItunesStorefrontArg(query);
+  if (!parsed.value) throw new ProviderError("bad_input", "itunes", "检索词不能为空");
+  const storefront = itunesStorefront(parsed.storefront, o.storefront);
+  const params = new URLSearchParams({
+    term: parsed.value,
+    media: "music",
+    entity: "album",
+    country: storefront,
+    limit: String(Math.min(200, Math.max(1, o.limit || 5))),
+  });
+  const url = "https://itunes.apple.com/search?" + params.toString();
+  const res = await jsonRequest(url, Object.assign({ provider: "itunes" }, o));
+  const response = requireObject(res.json, "itunes", "search");
+  const rawResults = requireArrayField(response, "results", "itunes", "search");
+  if (!Number.isInteger(response.resultCount) || response.resultCount < 0) {
+    throw new ProviderError("parse", "itunes", "search 响应缺少有效 resultCount", { retryable: false });
+  }
+  const hits = rawResults
+    .map((r) => requireSearchItem(r, "itunes", "search", ["collectionId"], ["collectionName"]))
+    .map((r) => mapItunesSearchHit(r, storefront));
+  return result("itunes", {
+    found: hits.length > 0,
+    id: hits[0] ? hits[0].id : null,
+    title: hits[0] ? hits[0].title : null,
+    image_url: hits[0] ? hits[0].image_url : null,
+    images: hits[0] ? hits[0].images : null,
+    release_number: hits[0] ? hits[0].release_number : null,
+    dates: hits[0] && hits[0].release_date ? { release: hits[0].release_date } : null,
+    url: hits[0] ? hits[0].url : null,
+    notes: hits.length
+      ? "候选 " + hits.length + " 条（resultCount=" + response.resultCount + "，storefront=" + storefront + "）；检索结果是候选，写入前须核对题名与艺人"
+      : "iTunes search 无命中（resultCount=0，storefront=" + storefront + "）：该商店下没有匹配的 album 候选",
+    raw: { resultCount: response.resultCount, storefront: storefront, hits: hits },
+  });
+}
+
+/** 单张专辑 + 曲目列表（lookup?id=<collectionId>&entity=song）；不存在 id 返回 found:false，不抛错。 */
+export async function lookupItunesAlbum(idOrUrl, opts) {
+  const o = opts || {};
+  const parsed = splitItunesStorefrontArg(idOrUrl);
+  const id = normalizeItunesCollectionId(parsed.value);
+  const storefront = itunesStorefront(parsed.storefront, o.storefront);
+  const params = new URLSearchParams({ id: id, entity: "song", country: storefront });
+  const url = "https://itunes.apple.com/lookup?" + params.toString();
+  const res = await jsonRequest(url, Object.assign({ provider: "itunes" }, o));
+  const response = requireObject(res.json, "itunes", "lookup");
+  const rawResults = requireArrayField(response, "results", "itunes", "lookup");
+  if (!Number.isInteger(response.resultCount) || response.resultCount < 0) {
+    throw new ProviderError("parse", "itunes", "lookup 响应缺少有效 resultCount", { retryable: false });
+  }
+  const collection = rawResults.find((r) => r && r.wrapperType === "collection");
+  if (!collection) {
+    return result("itunes", {
+      found: false,
+      id: id,
+      url: url,
+      raw: response,
+      notes: response.resultCount === 0
+        ? "iTunes lookup 空结果（resultCount=0）：collectionId=" + id + " 在 storefront=" + storefront + " 不存在或未上架"
+        : "iTunes lookup 返回 " + response.resultCount + " 条结果但没有 collection（该数字更像 trackId）：id=" + id + "，请换专辑数字 ID 重试",
+    });
+  }
+  requireSearchItem(collection, "itunes", "lookup", ["collectionId"], ["collectionName"]);
+  const tracks = rawResults
+    .filter((t) => t && t.wrapperType === "track")
+    .map((t) => ({
+      track_id: t.trackId != null ? String(t.trackId) : null,
+      disc_number: Number.isFinite(t.discNumber) ? Number(t.discNumber) : null,
+      disc_count: Number.isFinite(t.discCount) ? Number(t.discCount) : null,
+      track_number: Number.isFinite(t.trackNumber) ? Number(t.trackNumber) : null,
+      title: clean(t.trackName),
+      artist: clean(t.artistName),
+      duration_ms: Number.isFinite(t.trackTimeMillis) ? Number(t.trackTimeMillis) : null,
+      duration_seconds: Number.isFinite(t.trackTimeMillis) ? Math.round(Number(t.trackTimeMillis) / 100) / 10 : null,
+      has_preview: Boolean(t.previewUrl),
+      preview_url: clean(t.previewUrl),
+      explicitness: clean(t.trackExplicitness),
+      url: clean(t.trackViewUrl),
+    }));
+  const trackCount = Number.isFinite(collection.trackCount) ? Number(collection.trackCount) : null;
+  const genre = clean(collection.primaryGenreName);
+  const copyright = clean(collection.copyright);
+  const artwork = itunesArtworkBlock(collection.artworkUrl100);
+  return result("itunes", {
+    id: String(collection.collectionId),
+    title: clean(collection.collectionName),
+    titles: {
+      collection: clean(collection.collectionName),
+      censored: clean(collection.collectionCensoredName),
+      artist: clean(collection.artistName),
+    },
+    image_url: artwork.image_url,
+    images: artwork.images,
+    release_number: artwork.release_number,
+    image_page_url: clean(collection.collectionViewUrl),
+    dates: {
+      release: itunesReleaseDate(collection.releaseDate),
+      release_raw: clean(collection.releaseDate),
+    },
+    external_ids: {
+      itunes: String(collection.collectionId),
+      artist_id: collection.artistId != null ? String(collection.artistId) : null,
+      upc: collection.upc != null && String(collection.upc).trim() ? String(collection.upc) : null,
+      barcode_candidate: artwork.release_number ? artwork.release_number.value : null,
+    },
+    url: clean(collection.collectionViewUrl),
+    tracks: tracks,
+    notes: [
+      "曲目 " + tracks.length + " 条（trackCount=" + (trackCount == null ? "?" : trackCount) + "）",
+      "storefront=" + storefront,
+      trackCount != null && trackCount !== tracks.length ? "lookup 返回的曲目数与 trackCount 不一致，入库前须核对" : null,
+      genre ? "分类=" + genre : null,
+      copyright ? "版权=" + copyright : null,
+      artwork.release_number
+        ? "封面文件名含编号候选 " + artwork.release_number.value
+          + "（" + (artwork.release_number.scheme || "非标准 GTIN 位数")
+          + "，校验位" + (artwork.release_number.checksum_valid ? "通过" : "不通过")
+          + "；来源=封面文件名，未做硬校验，可能为数字发行独立编号、实体版条码或其他规则，须由 agent 按技能核实确认）"
+        : "封面文件名未含可识别编号（Apple Search API 响应不含 UPC/barcode 字段）",
+    ].filter(Boolean).join("；"),
+    rights_note: "封面 URL 为 Apple mzstatic 托管图（artworkUrl100 改写，实测 60–3000px 可用、超 3000 回退 3000，可换 png/webp；images 给多尺寸候选）；release_number 从封面文件名提取、非 Apple 字段，写入 pictures[] 与 identifiers 前仍按字段来源策略核实。",
+    raw: response,
+  });
+}
+
+// ───────────────────────── 13. Steam 商店 ─────────────────────────
+// 官方商店接口，无需 key：/api/appdetails 按 AppID 取应用资料，/api/storesearch 按名称检索候选。
+// 2026-10-08 本机实测（踩过的坑都写在这里）：
+//   1. AppID 不存在不是 404：HTTP 200 + {"<id>":{"success":false}}；appids=0 是 HTTP 400 且 body 为 null，
+//      所以 0 / 非数字先用 normalizeSteamAppId 挡掉，found 只按 success / items 判。
+//   2. 不写 cc 时区域与币种按请求来源地解析（本机实测得到 JPY）；要可复现的定价必须显式 cc=，
+//      默认 us 与本仓库既有游戏数字发行的定价记录口径一致（Celeste / Hades / ELDEN RING 均为 USD/US 区）。
+//   3. 发行日期随 l= 本地化："2018 年 1 月 25 日" / "2018年1月25日" / "Jan 25, 2018"；
+//      CJK 形态 parseEnglishDate 解析不了，走 parseSteamLocalDate。
+//   4. steamdb.info 是第三方聚合站，对机读返回 HTTP 403 自有拦截页（非 Cloudflare 挑战页）；
+//      它只作人工交叉核对，本模块不抓它的页面，只从 /app/<id>/ 链接里取 AppID。
+
+const STEAM_STORE = "https://store.steampowered.com";
+const STEAM_DEFAULT_CC = "us";
+const STEAM_DEFAULT_LANG = "english";
+const STEAM_MAX_LANGS = 4;
+const STEAM_LANG_CODE = /^[a-z][a-z0-9]{1,11}$/;
+const STEAM_CC_CODE = /^[a-z]{2}$/;
+
+/** 接受 504230 / store.steampowered.com/app/504230/Celeste/ / steamdb.info/app/504230/；只取 AppID，不读页面内容。 */
+export function normalizeSteamAppId(input) {
+  const text = String(input == null ? "" : input).trim();
+  if (/^\d{1,12}$/.test(text)) {
+    if (Number(text) < 1) throw new ProviderError("bad_input", "steam", "Steam AppID 必须是正整数，实际：" + text);
+    return String(Number(text));
+  }
+  const m = text.match(/(?:store\.steampowered\.com|steamdb\.info)\/app\/(\d{1,12})(?:\/|$|\?|#)/i);
+  if (m) {
+    if (Number(m[1]) < 1) throw new ProviderError("bad_input", "steam", "Steam AppID 必须是正整数，实际：" + m[1]);
+    return String(Number(m[1]));
+  }
+  throw new ProviderError("bad_input", "steam",
+    "无法解析 Steam AppID：" + text.slice(0, 80) + "（需要 1–12 位数字、store.steampowered.com/app/<id> 或 steamdb.info/app/<id> 链接）");
+}
+
+/** steam 单参数末尾可选 `lang=` / `langs=` / `cc=`（可叠加、任意顺序；后写的覆盖先写的，langs 优先于 lang）。 */
+export function splitSteamArgOptions(raw) {
+  let text = String(raw == null ? "" : raw).trim();
+  const parsed = { lang: null, langs: null, cc: null };
+  for (;;) {
+    const m = text.match(/(?:^|\s)(lang|langs|cc)=(\S*)\s*$/i);
+    if (!m) break;
+    const key = m[1].toLowerCase();
+    const value = String(m[2] || "");
+    if (key === "cc") {
+      const code = value.toLowerCase();
+      if (!STEAM_CC_CODE.test(code)) {
+        throw new ProviderError("bad_input", "steam",
+          "cc= 需要两字母国家/地区代码（us / cn / jp …），实际：" + String(value).slice(0, 20));
+      }
+      parsed.cc = code;
+    } else {
+      const codes = value.split(",").map((part) => part.trim().toLowerCase()).filter(Boolean);
+      if (!codes.length || codes.some((code) => !STEAM_LANG_CODE.test(code))) {
+        throw new ProviderError("bad_input", "steam",
+          key + "= 需要 Steam 语言代码（english / japanese / schinese …，langs= 可用逗号分隔），实际：" + String(value).slice(0, 40));
+      }
+      if (key === "lang") parsed.lang = codes[0];
+      else parsed.langs = codes;
+    }
+    text = text.slice(0, m.index).trim();
+  }
+  return { value: text, lang: parsed.lang, langs: parsed.langs, cc: parsed.cc };
+}
+
+/** 请求语种列表：参数后缀 > opts > 默认 english；一次最多 4 个，去重。 */
+function steamLangs(parsed, opts) {
+  const o = opts || {};
+  const optLangs = Array.isArray(o.langs) ? o.langs : (o.langs ? String(o.langs).split(",") : null);
+  const chosen = (parsed.langs && parsed.langs.length ? parsed.langs : null)
+    || (parsed.lang ? [parsed.lang] : null)
+    || optLangs
+    || (o.lang ? [String(o.lang)] : null)
+    || [STEAM_DEFAULT_LANG];
+  const codes = [...new Set(chosen.map((value) => String(value).trim().toLowerCase()).filter(Boolean))];
+  for (const code of codes) {
+    if (!STEAM_LANG_CODE.test(code)) {
+      throw new ProviderError("bad_input", "steam",
+        "lang= 需要 Steam 语言代码（english / japanese / schinese …），实际：" + String(code).slice(0, 20));
+    }
+  }
+  if (codes.length > STEAM_MAX_LANGS) {
+    throw new ProviderError("bad_input", "steam",
+      "一次最多取 " + STEAM_MAX_LANGS + " 个语种，实际 " + codes.length + " 个（拆成多次调用，避免放大请求量）");
+  }
+  return codes;
+}
+
+/** 区域码：参数后缀 > opts > 默认 us（不带 cc 时 Steam 按请求来源地解析，结果不可复现）。 */
+function steamCc(parsed, opts) {
+  const o = opts || {};
+  const chosen = parsed.cc || (o.cc == null ? "" : String(o.cc).trim().toLowerCase()) || STEAM_DEFAULT_CC;
+  if (!STEAM_CC_CODE.test(chosen)) {
+    throw new ProviderError("bad_input", "steam", "cc= 需要两字母国家/地区代码（us / cn / jp …），实际：" + String(chosen).slice(0, 20));
+  }
+  return chosen;
+}
+
+/** Steam 发行日期：英文月名交给 parseEnglishDate；中/日「2020 年 2 月 14 日」「2018年1月25日」单独归一。
+ *  解析不了（"Coming soon" / "2024 年 2 月" 这类）返回 null，原文留在 raw，不猜。 */
+export function parseSteamLocalDate(value) {
+  const text = String(value == null ? "" : value).trim();
+  if (!text) return null;
+  const cjk = text.match(/^(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日$/);
+  if (cjk) {
+    const month = Number(cjk[2]);
+    const day = Number(cjk[3]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return cjk[1] + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+  }
+  return parseEnglishDate(text);
+}
+
+/** appdetails 的 raw 子集：保留可逐字核对的字段，省掉 detailed_description / about_the_game 等长 HTML。 */
+const STEAM_APP_KEYS = [
+  "type", "name", "steam_appid", "required_age", "is_free", "short_description", "supported_languages",
+  "header_image", "capsule_image", "capsule_imagev5", "background", "website", "developers", "publishers",
+  "price_overview", "packages", "package_groups", "platforms", "metacritic", "categories", "genres",
+  "screenshots", "movies", "recommendations", "achievements", "release_date", "support_info",
+  "content_descriptors", "controller_support", "dlc", "legal_notice", "library_assets",
+];
+
+export function steamStoreUrl(id) {
+  return STEAM_STORE + "/app/" + String(id) + "/";
+}
+
+function steamDescriptionList(value) {
+  if (!Array.isArray(value)) return null;
+  return value.map((entry) => clean(entry && entry.description)).filter(Boolean);
+}
+
+/** price_overview 以「分」为单位；标价取未折扣的 initial，折扣价另存 final。 */
+function steamPriceFields(data, cc) {
+  const price = data.price_overview;
+  if (price && Number.isFinite(price.initial)) {
+    return {
+      currency: clean(price.currency),
+      amount: Math.round(price.initial) / 100,
+      amount_formatted: clean(price.initial_formatted),
+      discount_percent: Number.isFinite(price.discount_percent) ? Number(price.discount_percent) : null,
+      final_amount: Number.isFinite(price.final) ? Math.round(price.final) / 100 : null,
+      final_formatted: clean(price.final_formatted),
+      region: cc,
+      basis: "price_overview.initial（未折扣标价）",
+    };
+  }
+  if (data.is_free === true) {
+    return { currency: null, amount: 0, amount_formatted: null, discount_percent: 0, final_amount: 0, final_formatted: null, region: cc, basis: "is_free" };
+  }
+  return null;
+}
+
+/** 按 AppID 取应用资料；多语种串行请求（同主机节流），单语种无资料只记 notes，不伪造字段、不整体失败。 */
+export async function fetchSteamApp(idOrUrl, opts) {
+  const o = opts || {};
+  const parsed = splitSteamArgOptions(idOrUrl);
+  const id = normalizeSteamAppId(parsed.value);
+  const langs = steamLangs(parsed, o);
+  const cc = steamCc(parsed, o);
+
+  const locales = {};
+  const success = {};
+  const withoutData = [];
+  for (const lang of langs) {
+    const params = new URLSearchParams({ appids: id, l: lang, cc: cc });
+    const url = STEAM_STORE + "/api/appdetails?" + params.toString();
+    const res = await jsonRequest(url, Object.assign({ provider: "steam" }, o));
+    if (res.notFound) {
+      success[lang] = null;
+      withoutData.push(lang);
+      continue;
+    }
+    const payload = requireObject(res.json, "steam", "appdetails");
+    const entry = payload[id];
+    if (entry === undefined) {
+      throw new ProviderError("parse", "steam",
+        "appdetails 响应缺少 appid=" + id + " 的条目（顶层键：" + Object.keys(payload).join(",") + "）",
+        { retryable: false, url: url });
+    }
+    if (entry && entry.success === true) {
+      locales[lang] = requireObject(entry.data, "steam", "appdetails data");
+      success[lang] = true;
+    } else {
+      success[lang] = false;
+      withoutData.push(lang);
+    }
+  }
+
+  const okLangs = langs.filter((lang) => locales[lang]);
+  if (!okLangs.length) {
+    return result("steam", {
+      found: false,
+      id: id,
+      url: steamStoreUrl(id),
+      notes: "Steam appdetails 对 AppID " + id + " 返回 success:false（langs=" + langs.join(",") + "，cc=" + cc + "）："
+        + "该 AppID 不存在、未在 cc 区域上架，或所选语种没有资料；这是 cc 区域的答案，不代表该作品在其他区域或平台的收录情况",
+      raw: { appid: id, cc: cc, requested_langs: langs, success: success },
+    });
+  }
+
+  const primary = locales[okLangs[0]];
+  const titles = {};
+  const releaseByLang = {};
+  for (const lang of okLangs) {
+    const data = locales[lang];
+    const name = clean(data.name);
+    if (name) titles[lang] = name;
+    const release = data.release_date || {};
+    releaseByLang[lang] = {
+      date: clean(release.date),
+      coming_soon: release.coming_soon === true,
+      normalized: parseSteamLocalDate(release.date),
+    };
+  }
+  const primaryRelease = primary.release_date || {};
+  const primaryDate = clean(primaryRelease.date);
+  const normalizedDate = parseSteamLocalDate(primaryDate);
+  const price = steamPriceFields(primary, cc);
+  const websites = clean(primary.website);
+  const rawLocales = {};
+  for (const lang of okLangs) {
+    const slice = {};
+    for (const key of STEAM_APP_KEYS) if (locales[lang][key] !== undefined && locales[lang][key] !== null) slice[key] = locales[lang][key];
+    rawLocales[lang] = slice;
+  }
+
+  const notes = [
+    "cc=" + cc + "（定价与区域按该地区返回；不写 cc 时 Steam 按请求来源地解析，结果不可复现）",
+    "请求语种：" + langs.join(",") + (withoutData.length ? "（success:false 或无资料：" + withoutData.join(",") + "）" : ""),
+    primaryDate ? "发行日期原文「" + primaryDate + "」→ " + (normalizedDate || "无法归一，原文见 raw") : "本次响应没有 release_date.date",
+    primaryRelease.coming_soon === true ? "coming_soon=true：尚未发售，不能按已发售日期写 edition_date" : null,
+    price
+      ? "定价取 price_overview.initial（未折扣标价，region=" + cc + (price.discount_percent ? "，当前折扣 " + price.discount_percent + "%" : "") + "）；Steam 区域定价与折扣随活动变化，写入前复核"
+      : (primary.is_free === true
+        ? "该应用 is_free=true：无标价"
+        : "本次响应没有 price_overview：可能未在 cc=" + cc + " 区域销售或无价格信息，不能当作免费，也不能据此判定该地区未上架"),
+    "developers/publishers 是商店页署名，不是完整权利链；建 agent 与署名关系前另行核对",
+    "titles 是各语种的商店题名（译文可能非官方正式题名），写入 translations 前按命名与来源策略核对",
+  ].filter(Boolean).join("；");
+
+  return result("steam", {
+    id: id,
+    title: clean(primary.name),
+    titles: Object.keys(titles).length ? titles : null,
+    image_url: clean(primary.header_image),
+    image_page_url: steamStoreUrl(id),
+    dates: {
+      release: normalizedDate,
+      release_raw: primaryDate,
+      coming_soon: primaryRelease.coming_soon === true,
+      by_lang: releaseByLang,
+    },
+    external_ids: { steam: id },
+    url: steamStoreUrl(id),
+    type: clean(primary.type),
+    developers: Array.isArray(primary.developers) ? primary.developers.map(clean).filter(Boolean) : [],
+    publishers: Array.isArray(primary.publishers) ? primary.publishers.map(clean).filter(Boolean) : [],
+    genres: steamDescriptionList(primary.genres),
+    categories: steamDescriptionList(primary.categories),
+    platforms: primary.platforms || null,
+    languages: clean(primary.supported_languages),
+    website: websites,
+    price: price,
+    coming_soon: primaryRelease.coming_soon === true,
+    notes: notes,
+    rights_note: "cover/截图 URL 由 Steam CDN（steamstatic）托管、图片内容由发行商提供；header_image 是商店横幅，不自动等于发行版封面，写入 pictures[] 前按字段来源策略核对具体版次与权利。",
+    raw: { appid: id, cc: cc, requested_langs: langs, success: success, locales: rawLocales },
+  });
+}
+
+/** 商店检索（名称 → AppID 候选）。total=0 是明确的无命中，不是失败。 */
+export async function searchSteam(query, opts) {
+  const o = opts || {};
+  const parsed = splitSteamArgOptions(query);
+  if (!parsed.value) throw new ProviderError("bad_input", "steam", "检索词不能为空");
+  const lang = (parsed.langs && parsed.langs.length ? parsed.langs[0] : null)
+    || parsed.lang
+    || (o.lang == null ? "" : String(o.lang).trim().toLowerCase())
+    || STEAM_DEFAULT_LANG;
+  if (!STEAM_LANG_CODE.test(lang)) {
+    throw new ProviderError("bad_input", "steam", "lang= 需要 Steam 语言代码（english / japanese / schinese …），实际：" + String(lang).slice(0, 20));
+  }
+  const cc = steamCc(parsed, o);
+  const params = new URLSearchParams({ term: parsed.value, l: lang, cc: cc });
+  const url = STEAM_STORE + "/api/storesearch/?" + params.toString();
+  const res = await jsonRequest(url, Object.assign({ provider: "steam" }, o));
+  if (res.notFound) {
+    return result("steam", {
+      found: false,
+      url: url,
+      notes: "Steam storesearch 返回 404/410：该读取路径当前没有答案，不等于没有匹配作品",
+      raw: { url: url, raw: String(res.raw || "").slice(0, 400) },
+    });
+  }
+  const response = requireObject(res.json, "steam", "storesearch");
+  const rawItems = requireArrayField(response, "items", "steam", "storesearch");
+  const total = Number.isInteger(response.total) ? response.total : null;
+  const hits = rawItems.map((entry) => {
+    const item = requireSearchItem(entry, "steam", "storesearch", ["id"], ["name"]);
+    const price = item.price && Number.isFinite(item.price.initial)
+      ? {
+        currency: clean(item.price.currency),
+        amount: Math.round(item.price.initial) / 100,
+        final_amount: Number.isFinite(item.price.final) ? Math.round(item.price.final) / 100 : null,
+        region: cc,
+      }
+      : null;
+    return {
+      id: String(item.id),
+      type: clean(item.type),
+      name: clean(item.name),
+      url: steamStoreUrl(item.id),
+      image_url: clean(item.tiny_image),
+      price: price,
+      platforms: item.platforms || null,
+      metascore: clean(item.metascore),
+      raw: item,
+    };
+  });
+  return result("steam", {
+    found: hits.length > 0,
+    id: hits[0] ? hits[0].id : null,
+    title: hits[0] ? hits[0].name : null,
+    image_url: hits[0] ? hits[0].image_url : null,
+    url: hits[0] ? hits[0].url : null,
+    notes: hits.length
+      ? "候选 " + hits.length + " 条（total=" + (total == null ? "?" : total) + "，lang=" + lang + "，cc=" + cc + "）；检索结果是候选，写入前核对 AppID、类型（app / 原声 / DLC）与题名"
+      : "Steam storesearch 无命中（total=" + (total == null ? "?" : total) + "，lang=" + lang + "，cc=" + cc + "）：该地区与语种下没有匹配候选；换 lang=schinese / japanese 或换检索词再试",
+    raw: { total: total, cc: cc, lang: lang, hits: hits },
+  });
+}
+
 // ───────────────────────── 汇总入口（CLI 与 smoke 共用） ─────────────────────────
 
 export const PROVIDER_OPS = {
@@ -1804,6 +2452,10 @@ export const PROVIDER_OPS = {
   "ndl.authority": { provider: "ndl", label: "NDL Linked Data 权威记录", run: (arg, o) => fetchNdlAuthority(arg, o) },
   "vgmdb.album": { provider: "vgmdb", label: "VGMdb 专辑（直连；被拦时抛 blocked）", run: (arg, o) => fetchVgmdbAlbum(arg, o) },
   "vgmdb.archive": { provider: "vgmdb", label: "VGMdb 专辑（经 Internet Archive 存档）", run: (arg, o) => fetchVgmdbAlbumViaArchive(arg, o) },
+  "itunes.search": { provider: "itunes", label: "iTunes Store 专辑检索（可带 country=xx，默认 jp）", run: (arg, o) => searchItunes(arg, o) },
+  "itunes.album": { provider: "itunes", label: "iTunes Store 专辑 + 曲目（数字 collectionId 或专辑链接）", run: (arg, o) => lookupItunesAlbum(arg, o) },
+  "steam.app": { provider: "steam", label: "Steam 应用资料（AppID 或商店/steamdb 链接；可带 langs=/cc=）", run: (arg, o) => fetchSteamApp(arg, o) },
+  "steam.search": { provider: "steam", label: "Steam 商店检索（可带 lang=/cc=）", run: (arg, o) => searchSteam(arg, o) },
 };
 
 /** CLI / smoke 统一分发：未知 op 抛 bad_input，不静默返回空。 */

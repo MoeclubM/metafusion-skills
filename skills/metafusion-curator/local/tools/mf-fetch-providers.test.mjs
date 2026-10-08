@@ -11,14 +11,16 @@ import { fileURLToPath } from "node:url";
 import {
   ProviderError, PROVIDER_MATRIX, describeError, isValidIsni, looksLikeGatewayError, mapDiscogsRelease, providerAccess,
   normalizeAniListId, normalizeArchiveIdentifier, normalizeDiscogsId, normalizeIsni,
-  normalizeMalId, normalizeNdlAuthorityId, normalizeOpenLibraryId, normalizeVgmdbAlbumId,
+  normalizeItunesCollectionId, normalizeMalId, normalizeNdlAuthorityId, normalizeOpenLibraryId, normalizeVgmdbAlbumId,
   paceConfig, openLibraryCoverUrl, parseEnglishDate, parseVgmdbAlbumHtml, runProviderOp,
-  serialize, tmdbImageUrl,
+  itunesArtworkUrl, itunesArtworkBarcode, itunesArtworkSizes, serialize, splitItunesStorefrontArg, tmdbImageUrl,
+  normalizeSteamAppId, parseSteamLocalDate, splitSteamArgOptions, steamStoreUrl,
   fetchAniListMedia, fetchArchiveItem, fetchDiscogsMaster, fetchDiscogsRelease, fetchIsniRecord, fetchMyAnimeList,
   fetchNdlAuthority, fetchOclcFastHeading, fetchTmdbMedia, fetchVgmdbAlbum,
+  fetchSteamApp, searchSteam,
   fetchVgmdbAlbumViaArchive, fetchViafRecord, isniFromWikidataClaims, lookupOpenLibraryAuthor,
-  listOpenLibraryEditions, lookupOpenLibraryByIsbn, lookupOpenLibraryEdition, searchAniList, searchArchive, searchDiscogs,
-  searchMyAnimeList, searchOpenLibrary, searchTmdb, waybackSnapshot,
+  listOpenLibraryEditions, lookupItunesAlbum, lookupOpenLibraryByIsbn, lookupOpenLibraryEdition, searchAniList,
+  searchArchive, searchDiscogs, searchItunes, searchMyAnimeList, searchOpenLibrary, searchTmdb, waybackSnapshot,
 } from "./mf-fetch-providers.mjs";
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), "__fixtures__");
@@ -190,6 +192,8 @@ test("HTTP 200 search responses with missing result arrays are parse errors, not
     ["TMDB", () => searchTmdb("x", { apiKey: "offline-test-key", accessToken: "", fetchImpl: stubFetch([{ match: "search/movie", body: { total_results: 0 } }]) })],
     ["AniList", () => searchAniList("x", { fetchImpl: stubFetch([{ match: "graphql.anilist.co", body: { data: { Page: { pageInfo: { total: 0 } } } } }]) })],
     ["MAL", () => searchMyAnimeList("x", { clientId: "offline-test-client", fetchImpl: stubFetch([{ match: "api.myanimelist.net", body: { data: {} } }]) })],
+    ["iTunes", () => searchItunes("x", { fetchImpl: stubFetch([{ match: "itunes.apple.com/search", body: { resultCount: 0 } }]) })],
+    ["Steam", () => searchSteam("x", { fetchImpl: stubFetch([{ match: "storesearch", body: { total: 0 } }]) })],
   ];
   for (const [provider, run] of cases) {
     const err = await expectKind("parse", run);
@@ -555,6 +559,343 @@ test("fetchVgmdbAlbumViaArchive uses the id_ snapshot and keeps provenance", asy
   assert.match(out.notes, /https:\/\/vgmdb\.net\/album\/111949/);
   assert.equal(out.raw.original_url, "https://vgmdb.net/album/111949");
   assert.ok(out.raw.snapshot_timestamp);
+});
+
+// ───────── iTunes Store ─────────
+
+test("normalizeItunesCollectionId accepts digit ids and music.apple.com album urls", () => {
+  assert.equal(normalizeItunesCollectionId("541874266"), "541874266");
+  assert.equal(normalizeItunesCollectionId("https://music.apple.com/jp/album/aquaplus-vocal-collection-vol-1/541874266?uo=4"), "541874266");
+  assert.equal(normalizeItunesCollectionId("https://music.apple.com/jp/album/541874266?i=541874350"), "541874266");
+  assert.throws(() => normalizeItunesCollectionId("abc"), (e) => e instanceof ProviderError && e.kind === "bad_input");
+  assert.throws(() => normalizeItunesCollectionId(""), (e) => e.kind === "bad_input");
+});
+
+test("splitItunesStorefrontArg pulls an optional trailing country= override", () => {
+  assert.deepEqual(splitItunesStorefrontArg("  まいてつ  "), { value: "まいてつ", storefront: null });
+  assert.deepEqual(splitItunesStorefrontArg("LiSA country=US"), { value: "LiSA", storefront: "us" });
+  assert.deepEqual(splitItunesStorefrontArg("country=jp"), { value: "", storefront: "jp" });
+  assert.throws(() => splitItunesStorefrontArg("x country=jpn"), (e) => e instanceof ProviderError && e.kind === "bad_input");
+});
+
+test("itunesArtworkUrl rewrites the mzstatic size prefix and keeps foreign shapes", () => {
+  assert.equal(
+    itunesArtworkUrl("https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/8f/ee/39/x.jpg/100x100bb.jpg", 600),
+    "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/8f/ee/39/x.jpg/600x600bb.jpg");
+  assert.equal(itunesArtworkUrl(null), null);
+  assert.equal(itunesArtworkUrl("https://example.org/cover.jpg"), "https://example.org/cover.jpg");
+});
+
+test("itunesArtworkUrl clamps to 60-3000 and can switch the container ext", () => {
+  const url = "https://is1-ssl.mzstatic.com/image/thumb/Music62/v4/af/98/a6/u/4538182209493_cov.jpg/100x100bb.jpg";
+  assert.equal(itunesArtworkUrl(url, 99999), "https://is1-ssl.mzstatic.com/image/thumb/Music62/v4/af/98/a6/u/4538182209493_cov.jpg/3000x3000bb.jpg");
+  assert.equal(itunesArtworkUrl(url, 1), "https://is1-ssl.mzstatic.com/image/thumb/Music62/v4/af/98/a6/u/4538182209493_cov.jpg/60x60bb.jpg");
+  assert.equal(itunesArtworkUrl(url, 600, "webp"), "https://is1-ssl.mzstatic.com/image/thumb/Music62/v4/af/98/a6/u/4538182209493_cov.jpg/600x600bb.webp");
+});
+
+test("itunesArtworkSizes emits the default size map and rejects non-mzstatic shapes", () => {
+  const url = "https://is1-ssl.mzstatic.com/image/thumb/Music62/v4/af/98/a6/u/4538182209493_cov.jpg/100x100bb.jpg";
+  const map = itunesArtworkSizes(url);
+  assert.deepEqual(Object.keys(map), ["60", "100", "170", "300", "600", "1200", "3000"]);
+  assert.equal(map["600"], "https://is1-ssl.mzstatic.com/image/thumb/Music62/v4/af/98/a6/u/4538182209493_cov.jpg/600x600bb.jpg");
+  assert.equal(map["3000"], "https://is1-ssl.mzstatic.com/image/thumb/Music62/v4/af/98/a6/u/4538182209493_cov.jpg/3000x3000bb.jpg");
+  assert.deepEqual(itunesArtworkSizes(url, [300, 600]), {
+    "300": "https://is1-ssl.mzstatic.com/image/thumb/Music62/v4/af/98/a6/u/4538182209493_cov.jpg/300x300bb.jpg",
+    "600": "https://is1-ssl.mzstatic.com/image/thumb/Music62/v4/af/98/a6/u/4538182209493_cov.jpg/600x600bb.jpg",
+  });
+  assert.equal(itunesArtworkSizes("https://example.org/cover.jpg"), null);
+  assert.equal(itunesArtworkSizes(null), null);
+});
+
+test("itunesArtworkBarcode surfaces every numeric candidate (no hard validation) for agent verification", () => {
+  const base = "https://is1-ssl.mzstatic.com/image/thumb/Music62/v4/af/98/a6/u/";
+  assert.deepEqual(itunesArtworkBarcode(base + "4538182209493_cov.jpg/100x100bb.jpg"),
+    { value: "4538182209493", source: "apple_artwork_filename", scheme: "ean-13", checksum_valid: true });
+  assert.equal(itunesArtworkBarcode(base + "194491717186.jpg/100x100bb.jpg").scheme, "upc-a");
+  // 校验位不通过也不丢弃，只标记 checksum_valid:false，交 agent 按技能核实
+  const bad = itunesArtworkBarcode(base + "4538182209490.jpg/100x100bb.jpg");
+  assert.equal(bad.value, "4538182209490");
+  assert.equal(bad.checksum_valid, false);
+  // 非标准位数照样给候选，scheme 记 null
+  const odd = itunesArtworkBarcode(base + "1234567.jpg/100x100bb.jpg");
+  assert.equal(odd.value, "1234567");
+  assert.equal(odd.scheme, null);
+  // 文件名里没有数字编号段才返回 null
+  assert.equal(itunesArtworkBarcode("https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/8f/ee/39/u/dj.lxhnqrgt.jpg/100x100bb.jpg"), null);
+  assert.equal(itunesArtworkBarcode("https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/a/b/c/u/ami-identity-9f0.png/100x100bb.jpg"), null);
+  assert.equal(itunesArtworkBarcode(null), null);
+});
+
+test("searchItunes maps album candidates and keeps a raw slice per hit", async () => {
+  const fetchImpl = stubFetch([{ match: "itunes.apple.com/search", body: readJson("itunes-search.synthetic.json") }]);
+  const out = await searchItunes("AQUAPLUS", { fetchImpl });
+  const sent = new URL(fetchImpl.calls[0].url);
+  assert.equal(sent.pathname, "/search");
+  assert.equal(sent.searchParams.get("term"), "AQUAPLUS");
+  assert.equal(sent.searchParams.get("media"), "music");
+  assert.equal(sent.searchParams.get("entity"), "album");
+  assert.equal(sent.searchParams.get("country"), "jp");
+  assert.equal(sent.searchParams.get("limit"), "5");
+  assert.equal(out.provider, "itunes");
+  assert.equal(out.found, true);
+  assert.equal(out.id, "541874266");
+  assert.equal(out.title, "AQUAPLUS VOCAL COLLECTION VOL.1");
+  assert.equal(out.dates.release, "2006-01-01");
+  assert.equal(out.raw.resultCount, 2);
+  const hit = out.raw.hits[0];
+  assert.equal(hit.artist, "美崎しのぶ, 中司雅美, AKKO, 森川由綺 & 緒方理奈");
+  assert.equal(hit.track_count, 10);
+  assert.equal(hit.country, "JPN");
+  assert.equal(hit.storefront, "jp");
+  assert.equal(hit.release_date_raw, "2006-01-01T00:00:00Z");
+  assert.match(hit.url, /^https:\/\/music\.apple\.com\/jp\/album\//);
+  assert.match(hit.image_url, /\/600x600bb\.jpg$/);
+  assert.match(hit.images["3000"], /\/3000x3000bb\.jpg$/);
+  assert.equal(hit.release_number, null, "VOL.1 封面文件名 dj.lxhnqrgt 不是条码，应为 null");
+  assert.equal(hit.raw.collectionId, 541874266);
+  assert.equal(hit.raw.currency, "JPY");
+  const barcodeHit = out.raw.hits[1];
+  assert.deepEqual(barcodeHit.release_number, { value: "4538182209493", source: "apple_artwork_filename", scheme: "ean-13", checksum_valid: true, kind: "candidate" });
+  assert.match(barcodeHit.images["600"], /\/4538182209493_cov\.jpg\/600x600bb\.jpg$/);
+});
+
+test("searchItunes empty result is an explicit found:false, not a silent empty array", async () => {
+  const fetchImpl = stubFetch([{ match: "itunes.apple.com/search", body: { resultCount: 0, results: [] } }]);
+  const out = await searchItunes("Maitetsu", { fetchImpl });
+  assert.equal(out.found, false);
+  assert.equal(out.id, null);
+  assert.match(out.notes, /无命中/);
+  assert.match(out.notes, /resultCount=0/);
+  assert.deepEqual(out.raw.hits, []);
+});
+
+test("searchItunes honours a country= override and rejects a blank term before any request", async () => {
+  const fetchImpl = stubFetch([{ match: "itunes.apple.com/search", body: { resultCount: 0, results: [] } }]);
+  await searchItunes("LiSA country=us", { fetchImpl });
+  assert.match(fetchImpl.calls[0].url, /country=us/);
+  const blank = stubFetch([{ match: "itunes.apple.com/search", body: { resultCount: 0, results: [] } }]);
+  const err = await expectKind("bad_input", () => searchItunes("  ", { fetchImpl: blank }));
+  assert.equal(blank.calls.length, 0, "坏输入不该发出请求");
+  assert.match(err.message, /检索词不能为空/);
+});
+
+test("lookupItunesAlbum maps the collection plus the track list", async () => {
+  const fetchImpl = stubFetch([{ match: "itunes.apple.com/lookup", body: readJson("itunes-album.synthetic.json") }]);
+  const out = await lookupItunesAlbum("https://music.apple.com/jp/album/aquaplus-vocal-collection-vol-1/541874266?uo=4", { fetchImpl });
+  const sent = new URL(fetchImpl.calls[0].url);
+  assert.equal(sent.pathname, "/lookup");
+  assert.equal(sent.searchParams.get("id"), "541874266");
+  assert.equal(sent.searchParams.get("entity"), "song");
+  assert.equal(sent.searchParams.get("country"), "jp");
+  assert.equal(out.found, true);
+  assert.equal(out.id, "541874266");
+  assert.equal(out.title, "AQUAPLUS VOCAL COLLECTION VOL.1");
+  assert.equal(out.dates.release, "2006-01-01");
+  assert.equal(out.dates.release_raw, "2006-01-01T00:00:00Z");
+  assert.equal(out.external_ids.itunes, "541874266");
+  assert.equal(out.external_ids.barcode_candidate, null, "封面文件名非条码时不给候选编号");
+  assert.match(out.images["600"], /\/600x600bb\.jpg$/);
+  assert.equal(out.release_number, null);
+  assert.match(out.notes, /未含可识别编号/);
+  assert.equal(out.tracks.length, 2);
+  assert.equal(out.tracks[0].disc_number, 1);
+  assert.equal(out.tracks[0].track_number, 1);
+  assert.equal(out.tracks[0].title, "Brand-New Heart");
+  assert.equal(out.tracks[0].duration_ms, 277160);
+  assert.equal(out.tracks[0].duration_seconds, 277.2);
+  assert.equal(out.tracks[0].has_preview, true);
+  assert.match(out.tracks[0].preview_url, /^https:\/\/audio-ssl\.itunes\.apple\.com\//);
+  assert.equal(out.tracks[1].track_number, 2);
+  assert.match(out.notes, /曲目 2 条（trackCount=10）/);
+  assert.match(out.notes, /不一致/);
+  assert.match(out.notes, /storefront=jp/);
+  assert.equal(out.raw.resultCount, 3);
+});
+
+test("lookupItunesAlbum maps an empty lookup to found:false (HTTP 200 + resultCount=0)", async () => {
+  const fetchImpl = stubFetch([{ match: "itunes.apple.com/lookup", body: { resultCount: 0, results: [] } }]);
+  const out = await lookupItunesAlbum("999999999999", { fetchImpl });
+  assert.equal(out.found, false);
+  assert.equal(out.id, "999999999999");
+  assert.match(out.notes, /不存在或未上架/);
+});
+
+test("lookupItunesAlbum flags an id that resolves to tracks but no collection", async () => {
+  const fetchImpl = stubFetch([{ match: "itunes.apple.com/lookup", body: { resultCount: 1, results: [{ wrapperType: "track", trackId: 541874350, trackName: "Brand-New Heart" }] } }]);
+  const out = await lookupItunesAlbum("541874350", { fetchImpl });
+  assert.equal(out.found, false);
+  assert.match(out.notes, /trackId/);
+});
+
+test("lookupItunesAlbum rejects a non-numeric id without any request", async () => {
+  const fetchImpl = stubFetch([{ match: "itunes.apple.com/lookup", body: {} }]);
+  const err = await expectKind("bad_input", () => lookupItunesAlbum("not-an-id", { fetchImpl }));
+  assert.equal(fetchImpl.calls.length, 0);
+  assert.match(err.message, /collectionId/);
+});
+
+test("lookupItunesAlbum surfaces the artwork-filename barcode as an explicit candidate, not a verified upc", async () => {
+  const fetchImpl = stubFetch([{ match: "itunes.apple.com/lookup", body: readJson("itunes-album-barcode.synthetic.json") }]);
+  const out = await lookupItunesAlbum("1591536789", { fetchImpl });
+  assert.equal(out.found, true);
+  assert.deepEqual(out.release_number, { value: "4547366532999", source: "apple_artwork_filename", scheme: "ean-13", checksum_valid: true, kind: "candidate" });
+  assert.equal(out.external_ids.barcode_candidate, "4547366532999");
+  assert.equal(out.external_ids.upc, null, "Apple Search API 不返回 upc，保持 null");
+  assert.match(out.notes, /编号候选 4547366532999/);
+  assert.match(out.notes, /校验位通过/);
+  assert.match(out.notes, /须由 agent 按技能核实确认/);
+  assert.match(out.images["600"], /\/4547366532999\.jpg\/600x600bb\.jpg$/);
+});
+
+// ───────── Steam 商店 ─────────
+
+test("normalizeSteamAppId accepts ids and both store/steamdb urls", () => {
+  assert.equal(normalizeSteamAppId("504230"), "504230");
+  assert.equal(normalizeSteamAppId(" 504230 "), "504230");
+  assert.equal(normalizeSteamAppId("https://store.steampowered.com/app/504230/Celeste/"), "504230");
+  assert.equal(normalizeSteamAppId("https://steamdb.info/app/504230/"), "504230");
+  assert.equal(normalizeSteamAppId("https://steamdb.info/app/504230"), "504230");
+  for (const junk of ["0", "-1", "abc", "https://store.steampowered.com/app/Celeste/", ""]) {
+    assert.throws(() => normalizeSteamAppId(junk), (e) => e instanceof ProviderError && e.kind === "bad_input", "应拒绝：" + junk);
+  }
+});
+
+test("splitSteamArgOptions pulls trailing lang/langs/cc and rejects malformed codes", () => {
+  assert.deepEqual(splitSteamArgOptions("504230"), { value: "504230", lang: null, langs: null, cc: null });
+  assert.deepEqual(splitSteamArgOptions("504230 cc=jp lang=japanese"), { value: "504230", lang: "japanese", langs: null, cc: "jp" });
+  assert.deepEqual(splitSteamArgOptions("Celeste langs=english,schinese cc=cn"), { value: "Celeste", lang: null, langs: ["english", "schinese"], cc: "cn" });
+  assert.throws(() => splitSteamArgOptions("x cc=jpn"), (e) => e.kind === "bad_input");
+  assert.throws(() => splitSteamArgOptions("x lang=zh-CN"), (e) => e.kind === "bad_input");
+});
+
+test("parseSteamLocalDate normalizes english and CJK store dates only", () => {
+  assert.equal(parseSteamLocalDate("Jan 25, 2018"), "2018-01-25");
+  assert.equal(parseSteamLocalDate("2018 年 1 月 25 日"), "2018-01-25");
+  assert.equal(parseSteamLocalDate("2018年1月25日"), "2018-01-25");
+  assert.equal(parseSteamLocalDate("2020"), "2020");
+  assert.equal(parseSteamLocalDate("Coming soon"), null);
+  assert.equal(parseSteamLocalDate("2024 年 2 月"), null);
+  assert.equal(parseSteamLocalDate(""), null);
+});
+
+test("steamStoreUrl builds the canonical store url", () => {
+  assert.equal(steamStoreUrl("504230"), "https://store.steampowered.com/app/504230/");
+  assert.equal(steamStoreUrl(504230), "https://store.steampowered.com/app/504230/");
+});
+
+test("fetchSteamApp maps multi-language appdetails into the shared shape", async () => {
+  const english = {
+    type: "game", name: "Celeste", steam_appid: 504230, is_free: false,
+    short_description: "Help Madeline survive her inner demons.",
+    supported_languages: "English, French, Italian",
+    header_image: "https://cdn.akamai.steamstatic.com/steam/apps/504230/header.jpg",
+    website: "https://www.celestegame.com/",
+    developers: ["Maddy Makes Games Inc.", "Extremely OK Games, Ltd."],
+    publishers: ["Maddy Makes Games Inc."],
+    platforms: { windows: true, mac: true, linux: true },
+    genres: [{ id: "1", description: "Action" }, { id: "23", description: "Indie" }],
+    release_date: { coming_soon: false, date: "Jan 25, 2018" },
+    price_overview: { currency: "USD", initial: 1999, final: 499, discount_percent: 75, initial_formatted: "$19.99", final_formatted: "$4.99" },
+  };
+  const schinese = {
+    name: "蔚蓝",
+    short_description: "帮助 Madeline 战胜内心的恶魔。",
+    release_date: { coming_soon: false, date: "2018 年 1 月 25 日" },
+    price_overview: { currency: "USD", initial: 1999, final: 1999, discount_percent: 0, initial_formatted: "$19.99", final_formatted: "$19.99" },
+  };
+  const fetchImpl = stubFetch([
+    { match: "l=english", body: { "504230": { success: true, data: english } } },
+    { match: "l=schinese", body: { "504230": { success: true, data: schinese } } },
+  ]);
+  const out = await fetchSteamApp("https://store.steampowered.com/app/504230/Celeste/ langs=english,schinese", { fetchImpl });
+  assert.equal(out.found, true);
+  assert.equal(out.id, "504230");
+  assert.equal(out.title, "Celeste");
+  assert.deepEqual(out.titles, { english: "Celeste", schinese: "蔚蓝" });
+  assert.equal(out.dates.release, "2018-01-25");
+  assert.equal(out.dates.release_raw, "Jan 25, 2018");
+  assert.equal(out.dates.by_lang.schinese.normalized, "2018-01-25");
+  assert.deepEqual(out.external_ids, { steam: "504230" });
+  assert.equal(out.url, "https://store.steampowered.com/app/504230/");
+  assert.deepEqual(out.developers, ["Maddy Makes Games Inc.", "Extremely OK Games, Ltd."]);
+  assert.deepEqual(out.genres, ["Action", "Indie"]);
+  assert.equal(out.price.amount, 19.99);
+  assert.equal(out.price.final_amount, 4.99);
+  assert.equal(out.price.region, "us");
+  assert.match(out.notes, /未折扣标价/);
+  assert.ok(fetchImpl.calls.every((call) => call.url.includes("cc=us")), "未写 cc 时应默认 us");
+  assert.equal(out.raw.locales.english.short_description, "Help Madeline survive her inner demons.");
+});
+
+test("fetchSteamApp reports success:false as found:false without throwing", async () => {
+  const fetchImpl = stubFetch([{ match: "appdetails", body: { "999999999": { success: false } } }]);
+  const out = await fetchSteamApp("999999999 cc=us", { fetchImpl });
+  assert.equal(out.found, false);
+  assert.equal(out.id, "999999999");
+  assert.match(out.notes, /success:false/);
+  assert.match(out.notes, /不代表该作品在其他区域或平台/);
+});
+
+test("fetchSteamApp keeps the languages that answered and flags the ones without data", async () => {
+  const fetchImpl = stubFetch([
+    { match: "l=english", body: { "504230": { success: true, data: { name: "Celeste", type: "game", release_date: { date: "Jan 25, 2018", coming_soon: false } } } } },
+    { match: "l=japanese", body: { "504230": { success: false } } },
+  ]);
+  const out = await fetchSteamApp("504230 langs=english,japanese", { fetchImpl });
+  assert.equal(out.found, true);
+  assert.deepEqual(out.titles, { english: "Celeste" });
+  assert.match(out.notes, /success:false 或无资料：japanese/);
+  assert.equal(out.raw.success.japanese, false);
+});
+
+test("fetchSteamApp flags coming_soon and refuses to read a missing price as free", async () => {
+  const fetchImpl = stubFetch([{ match: "appdetails", body: { "123": { success: true, data: { name: "TBA Game", type: "game", is_free: false, release_date: { coming_soon: true, date: "Coming soon" } } } } }]);
+  const out = await fetchSteamApp("123", { fetchImpl });
+  assert.equal(out.coming_soon, true);
+  assert.equal(out.dates.release, null);
+  assert.equal(out.dates.release_raw, "Coming soon");
+  assert.equal(out.price, null);
+  assert.match(out.notes, /不能按已发售日期写 edition_date/);
+  assert.match(out.notes, /不能当作免费/);
+});
+
+test("fetchSteamApp rejects more than four languages before any request", async () => {
+  const fetchImpl = stubFetch([{ match: "appdetails", body: {} }]);
+  const err = await expectKind("bad_input", () => fetchSteamApp("1 langs=english,japanese,schinese,tchinese,koreana", { fetchImpl }));
+  assert.equal(fetchImpl.calls.length, 0);
+  assert.match(err.message, /最多取 4 个语种/);
+});
+
+test("searchSteam lists store candidates and keeps type/price for triage", async () => {
+  const body = {
+    total: 9,
+    items: [
+      { type: "app", id: 504230, name: "Celeste", price: { currency: "CNY", initial: 6800, final: 1700 }, tiny_image: "https://cdn.akamai.steamstatic.com/steam/apps/504230/capsule_sm_120.jpg", metascore: "88", platforms: { windows: true, mac: true, linux: true } },
+      { type: "app", id: 1092840, name: "Celeste Soundtrack", price: { currency: "CNY", initial: 3400, final: 850 }, tiny_image: "", metascore: "", platforms: { windows: true } },
+    ],
+  };
+  const fetchImpl = stubFetch([{ match: "storesearch", body: body }]);
+  const out = await searchSteam("Celeste cc=cn", { fetchImpl });
+  assert.equal(out.found, true);
+  assert.equal(out.id, "504230");
+  assert.equal(out.title, "Celeste");
+  assert.equal(out.url, "https://store.steampowered.com/app/504230/");
+  assert.match(out.notes, /候选 2 条（total=9/);
+  assert.match(out.notes, /核对 AppID、类型/);
+  assert.equal(out.raw.hits[0].price.amount, 68);
+  assert.equal(out.raw.hits[0].raw.metascore, "88");
+  assert.equal(out.raw.hits[1].image_url, null);
+  assert.ok(fetchImpl.calls[0].url.includes("cc=cn"));
+});
+
+test("searchSteam maps an empty result to found:false and suggests another language", async () => {
+  const fetchImpl = stubFetch([{ match: "storesearch", body: { total: 0, items: [] } }]);
+  const out = await searchSteam("まいてつ", { fetchImpl });
+  assert.equal(out.found, false);
+  assert.equal(out.id, null);
+  assert.equal(out.url, null);
+  assert.match(out.notes, /无命中/);
+  assert.match(out.notes, /lang=schinese/);
 });
 
 // ───────── 错误与节流行为 ─────────

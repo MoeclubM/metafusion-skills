@@ -30,6 +30,10 @@ Bushiroad Music / BanG Dream：`price` 保留来源原始字符串，仅唯一�
 | OCLC FAST | `oclc.fast`：只读公开 FAST suggestion 查询，不实现带认证的 WorldCat API | 不读取 WorldCat 凭据。FAST 端点可能拒绝请求或发生变化；拒绝/解析失败按未知处理，不能据此声称 WorldCat 记录不存在或“配置 key 后即可用”。 |
 | NDL Linked Data | `ndl.authority` | 无连接器 key；范围限权威记录，不代表 NDL 全部书目或检索服务。 |
 | VGMdb | `vgmdb.album`、`vgmdb.archive` | 无连接器 key。直连拦截或无可用存档都属于未知/不可读取，不代表记录不存在；社区资料仅作候选。 |
+| iTunes Store | `itunes.search`、`itunes.album`（lookup 含曲目） | 无连接器 key；Apple Search API 文档口径约 20 req/min（[文档](https://performance-partners.apple.com/search-api)）。storefront 默认 jp，可用末尾 `country=xx` 覆盖；不存在的 id 返回 HTTP 200 + `resultCount:0`，按 `found:false` 判读。结果含 `images`（`{60…3000}` 多尺寸封面 URL，实测 mzstatic 超 3000 回退 3000，可换 png/webp）与 `release_number`。 |
+
+iTunes 封面编号：Apple 的 `artworkUrl*` 原图文件名段常常就是发行方编号（`4538182209493_cov.jpg`、`4547366532999.jpg`）。连接器**不做硬校验**：文件名以一段 6–14 位数字开头、后接分隔符或结尾即原样给出候选 `release_number`（搜索结果同名字段）与 `itunes.album` 的 `external_ids.barcode_candidate`，并附带 `scheme`（位数匹配时给 `ean-8`/`upc-a`/`ean-13`/`gtin-14`，否则 `null`）与 `checksum_valid` 提示，均标 `kind: candidate`。**这不是 Apple 字段**：Apple 响应本身不含 UPC/barcode；同一张数字发行可能用独立编号、沿用实体版条码，或（文件名非数字段时）没有编号。因此 `release_number` 一律由 agent 按技能核实确认后再用，不得直接当实体盘 UPC/JAN 或已核实 `identifiers`。
+| Steam 商店 | `steam.app`（appdetails）、`steam.search`（storesearch） | 无连接器 key；Valve 商店接口口径 200 calls/5 min，批量导入须自行限速。区域默认 `cc=us`（不写 cc 时按请求来源地解析、不可复现）；AppID 不存在是 HTTP 200 + `success:false`（不是 404），按 `found:false` 判读且只代表该区域。题名/价格由发行商与 Valve 提供，`developers`/`publishers` 不是完整权利链。[steamdb.info](https://steamdb.info/) 是第三方聚合站、对机读返回 403，只作人工交叉核对；连接器仅从它的 `/app/<id>/` 链接取 AppID。 |
 
 ## 失败与证据判读
 

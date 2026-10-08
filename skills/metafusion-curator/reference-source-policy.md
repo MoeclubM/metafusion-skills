@@ -25,6 +25,8 @@
 
 官方主页写 `external_ids.official_website` 完整 URL，渠道/资讯页不替代。Apple Music/iTunes 官方页可支持对应数字发行；专辑 ID 写 `external_ids.apple_music`，不套用到其他版次。
 
+iTunes 封面 URL 的文件名段（如 `4538182209493_cov.jpg`、`4547366532999.jpg`）常携带发行方编号，而连接器 `itunes.album` 的 `release_number` / `external_ids.barcode_candidate` 只做「6–14 位数字 + 可选 GTIN 校验提示」的保守提取，**不自行判定来源资格**：同一张数字发行可能用独立编号、沿用实体版条码或没有编号，文件名取值也不保证等于实体盘 UPC/JAN。因此它只是候选线索，除非与权利方页面或对应版次交叉核实，否则不满足上表「条码/编号」的 CORE-P1 门槛，不得直接写入 `identifiers`/`external_ids`。封面 `images` 多尺寸同样只作图源候选，按「图片」一节核实图源、版次与权利。
+
 ## 当前证据
 
 `sources` 是修订级证据，不在 Entity 顶层，也不提供字段级 provenance。按 `revision.version == entity.version` 选当前修订，再逐字段核来源实际内容、作用域与版次；citation 写支持字段。历史修订、失效链接或接口接受载荷不补当前资格；核心缺证标“需补证/不计完整”。

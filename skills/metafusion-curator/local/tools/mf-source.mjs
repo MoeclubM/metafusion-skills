@@ -18,6 +18,7 @@ const SOURCE_ALIASES = {
   sony: "sony_music", sonymusic: "sony_music", "sony-music": "sony_music",
   bushiroad: "bushiroad_music", "bushiroad-music": "bushiroad_music",
   bangdream: "bang_dream", "bang-dream": "bang_dream",
+  itunes_store: "itunes", "itunes-store": "itunes",
 };
 
 const PUBLISHER_LABELS = {
@@ -66,6 +67,26 @@ const OPERATION_INPUTS = {
   "ndl.authority": { argument: "7–10 位 NDL 权威记录号，或 id.ndl.go.jp/auth/ndlna/{id}、/auth/entity/{id} URL。", example: "mf-source run ndl.authority 12345678" },
   "vgmdb.album": { argument: "1–12 位数字 VGMdb album ID，或 vgmdb.net/album/{数字 ID} URL。", example: "mf-source run vgmdb.album 123456" },
   "vgmdb.archive": { argument: "1–12 位数字 VGMdb album ID，或 vgmdb.net/album/{数字 ID} URL；读取 Internet Archive 快照。", example: "mf-source run vgmdb.archive 123456" },
+  "itunes.search": {
+    argument: "非空检索词，可带末尾 country=<两字母 storefront>（默认 jp，本仓库以日系音乐为主）；固定 media=music、entity=album。",
+    example: "mf-source run itunes.search AQUAPLUS",
+    note: "storefront 覆盖示例：run itunes.search LiSA country=us。检索结果是候选；无命中时返回 found:false 并在 notes 说明 resultCount=0，不静默返回空。",
+  },
+  "itunes.album": {
+    argument: "1–12 位数字 collectionId，或 music.apple.com/.../album/... 链接中的数字 ID；可带末尾 country=<两字母 storefront>（默认 jp）。",
+    example: "mf-source run itunes.album 541874266",
+    note: "lookup 带 entity=song，返回专辑字段 + 曲目列表（discNumber/trackNumber/时长秒/试听）；不存在的 id 返回 found:false。",
+  },
+  "steam.app": {
+    argument: "1–12 位 AppID，或 store.steampowered.com/app/<id> / steamdb.info/app/<id> 链接；可带末尾 langs=<逗号分隔语种，最多 4 个>、lang=<单语种>、cc=<两字母区域>。",
+    example: "mf-source run steam.app 504230",
+    note: "多语种与区域覆盖示例：run steam.app 504230 langs=english,japanese,schinese cc=us。cc 默认 us（既有游戏数字发行定价按 USD/US 区记录）；不写 cc 时 Steam 按请求来源地解析、结果不可复现。AppID 不存在是 HTTP 200 + success:false，按 found:false 判读，且只代表该 cc 区域。返回 titles（各语种商店题名）、dates.release（已归一）、developers/publishers、genres、platforms、price（未折扣标价 initial）。",
+  },
+  "steam.search": {
+    argument: "非空检索词；可带末尾 lang=<单语种，默认 english>、cc=<两字母区域>。",
+    example: "mf-source run steam.search Celeste",
+    note: "storesearch 返回 AppID 候选（含原声/DLC 等 type）；检索结果是候选，写入前核对 AppID 与题名。无命中按 found:false 返回，并提示换 lang=schinese / japanese。",
+  },
   "wikidata.search": { argument: "非空实体名称/关键词；检索语言固定为 ja。", example: "mf-source run wikidata.search artist-example" },
   "wikidata.entity": { argument: "Wikidata QID：Q 后跟 1–20 位数字；不接受实体 URL。", example: "mf-source run wikidata.entity Q123" },
   "bangumi.subject": { argument: "正整数 subject ID，最多 12 位数字。", example: "mf-source run bangumi.subject 123" },

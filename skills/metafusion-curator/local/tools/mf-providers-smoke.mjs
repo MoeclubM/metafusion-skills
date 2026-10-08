@@ -42,6 +42,10 @@ const PLAN = [
   { provider: "ndl", op: "ndl.authority", arg: "00130315", expect: ["OK"], why: "id.ndl.go.jp 权威 JSON-LD" },
   { provider: "vgmdb", op: "vgmdb.album", arg: "111949", expect: ["OK", "BLOCKED"], why: "直连（实测反爬 403）" },
   { provider: "vgmdb", op: "vgmdb.archive", arg: "111949", expect: ["OK", "NOT_FOUND", "UNAVAILABLE"], why: "经 Internet Archive id_ 存档（2 次请求）" },
+  { provider: "itunes", op: "itunes.search", arg: "AQUAPLUS", expect: ["OK"], why: "免费 Search API（media=music&entity=album，country=jp）" },
+  { provider: "itunes", op: "itunes.album", arg: "541874266", expect: ["OK"], why: "lookup?id=<collectionId>&entity=song（含曲目）" },
+  { provider: "steam", op: "steam.app", arg: "504230 langs=english,japanese,schinese", expect: ["OK"], why: "appdetails（AppID 504230 Celeste；三语种串行）" },
+  { provider: "steam", op: "steam.search", arg: "Celeste", expect: ["OK"], why: "storesearch 候选（含原声/DLC 类型）" },
 ];
 
 const KIND_TO_OUTCOME = {

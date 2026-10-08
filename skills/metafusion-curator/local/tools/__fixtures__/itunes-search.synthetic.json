@@ -1,0 +1,46 @@
+{
+ "resultCount": 2,
+ "results": [
+  {
+   "wrapperType": "collection",
+   "collectionType": "Album",
+   "artistId": 541874351,
+   "collectionId": 541874266,
+   "artistName": "美崎しのぶ, 中司雅美, AKKO, 森川由綺 & 緒方理奈",
+   "collectionName": "AQUAPLUS VOCAL COLLECTION VOL.1",
+   "collectionCensoredName": "AQUAPLUS VOCAL COLLECTION VOL.1",
+   "artistViewUrl": "https://music.apple.com/jp/artist/%E7%BE%8E%E5%B4%8E%E3%81%97%E3%81%AE%E3%81%B6/541874351?uo=4",
+   "collectionViewUrl": "https://music.apple.com/jp/album/aquaplus-vocal-collection-vol-1/541874266?uo=4",
+   "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/8f/ee/39/8fee3908-b7cb-0bb7-d71c-452f781715fa/dj.lxhnqrgt.jpg/60x60bb.jpg",
+   "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/8f/ee/39/8fee3908-b7cb-0bb7-d71c-452f781715fa/dj.lxhnqrgt.jpg/100x100bb.jpg",
+   "collectionPrice": 2037,
+   "collectionExplicitness": "notExplicit",
+   "trackCount": 10,
+   "copyright": "℗ 2006 F.I.X.RECORDS",
+   "country": "JPN",
+   "currency": "JPY",
+   "releaseDate": "2006-01-01T00:00:00Z",
+   "primaryGenreName": "アニメ"
+  },
+  {
+   "wrapperType": "collection",
+   "collectionType": "Album",
+   "artistId": 36270,
+   "collectionId": 541918196,
+   "artistName": "Various Artists",
+   "collectionName": "AQUAPLUS VOCAL COLLECTION VOL.4",
+   "collectionCensoredName": "AQUAPLUS VOCAL COLLECTION VOL.4",
+   "collectionViewUrl": "https://music.apple.com/jp/album/aquaplus-vocal-collection-vol-4/541918196?uo=4",
+   "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/Music62/v4/af/98/a6/af98a602-3422-1fcf-6fec-f111070dea81/4538182209493_cov.jpg/60x60bb.jpg",
+   "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music62/v4/af/98/a6/af98a602-3422-1fcf-6fec-f111070dea81/4538182209493_cov.jpg/100x100bb.jpg",
+   "collectionPrice": 2037,
+   "collectionExplicitness": "notExplicit",
+   "trackCount": 10,
+   "copyright": "℗ 2006 F.I.X.RECORDS",
+   "country": "JPN",
+   "currency": "JPY",
+   "releaseDate": "2006-01-01T00:00:00Z",
+   "primaryGenreName": "アニメ"
+  }
+ ]
+}
