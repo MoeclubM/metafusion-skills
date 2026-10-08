@@ -404,7 +404,7 @@ async function checkOperationContract(requestFn, pathname, method, requestSchema
   if (loaded.error) return loaded;
   const operation = operationRequestSchema(loaded.contract, pathname, method, requestSchema, { payloadField });
   if (!operation) return { error: { ok: false, outcome: "partial", reason: "operation_not_confirmed_by_openapi", path: pathname, method, requestSchema } };
-  return { operation };
+  return { operation, contract: loaded.contract };
 }
 
 function fieldValueError(value, field, document, fieldPath, { root = false } = {}) {
@@ -1028,7 +1028,7 @@ export async function runPlan(plan, { apply = false, requestFn = apiRequest, fin
   if (plan.action === "entity.update") {
     const contract = await checkOperationContract(requestFn, `${ENTITY_LIST}/{id}`, "put", "Edit", "entity");
     if (contract.error) return contract.error;
-    return guardedUpdate(plan.plan, { apply, requestFn });
+    return guardedUpdate(plan.plan, { apply, requestFn, contract: contract.contract });
   }
   if (plan.action === "track-content.add") return addTrackContent({ plan: plan.plan, apply, requestFn });
   return { ok: false, outcome: "rejected", reason: "unsupported_action", applied: false };
@@ -1046,7 +1046,7 @@ export function helpText() {
     "",
     "写计划默认只预览；--apply 只是执行开关，不代表平台授权，且必须提供 --out。--out 只创建新文件，不覆盖已有文件。写请求单次发送，不自动重试；结果不明时停止并回报 unknown。",
     "definitions 仅提供只读读取；词表/定义写入使用专职 mf-definitions 工具。",
-    "Track.contents 写入仅经 mf-track-content；Track 整实体 PUT 由 mf-guarded-update 拒绝。",
+    "Track.contents 写入仅经 mf-track-content；entity.update 仅允许 Track.status 专用 PATCH，整实体 PUT 仍拒绝。",
     "不提供任意 HTTP、PUT、DELETE、lifecycle 或文件上传入口。",
     "列表和查重结果只覆盖当前调用者可见范围；mf-find-identity 的标题/译名/别名、外部 ID 与身份属性命中只产生候选，canonical 候选需逐项确认 distinct，不自动认定身份。",
     "",

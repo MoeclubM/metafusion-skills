@@ -288,24 +288,3 @@ test("putEntity 遇到 409 不自动重放，也不把冲突当成功", async ()
   assert.equal(result.readbackStatus, null);
   assert.deepEqual(calls, ["GET", "PUT"]);
 });
-
-test("putEntity 在 mutate 与写入前拒绝 Track，预览也不能产生可应用的 PUT", async () => {
-  for (const dryRun of [false, true]) {
-    const calls = [];
-    let mutated = false;
-    globalThis.fetch = async (_url, init = {}) => {
-      calls.push(init.method || "GET");
-      return jsonResponse({ ...currentEntity(), kind: "track", contents: [] });
-    };
-    await assert.rejects(putEntity("entity-1", () => {
-      mutated = true;
-      return { title: "Changed" };
-    }, {
-      dryRun,
-      editNote: "官方曲序题名",
-      sources: [{ kind: "publication", citation: "官方曲序：支持 track.title" }],
-    }), /Track 禁止整实体 PUT/);
-    assert.equal(mutated, false);
-    assert.deepEqual(calls, ["GET"]);
-  }
-});

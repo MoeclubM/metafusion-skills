@@ -32,3 +32,4 @@ node mf-definitions.mjs plan reviewed-field-create.json --out preview-field.json
 - 来源 `help/list` 不联网；读取用 `run <operation> <arg>`，没有独立 search/fetch 子命令。`--out` 独占新建，不覆盖。
 - 平台/定义默认预览；执行需 `--apply --out`，执行开关不提供任务授权。定义工具仅支持词项 upsert 与受控单字段新增；服务端 impact issues 阻断，写后校验完整文档回读。
 - 平台入口不含删除、生命周期、上传或任意 HTTP；Track 不做整实体 PUT。其余写入与失败判读见 [API 行为](../../reference-api-behavior.md)，证据见 [来源策略](../../reference-source-policy.md)。
+- Track 的 `entity.update` 仅接受 `patch: {"status":"published"}` 等单个状态字段，经运行时 OpenAPI 确认后调用 `PATCH /api/catalog/tracks/{id}/status`；必须提供当前 `expected_version`、`edit_note` 与支持 `status` 的来源。专用端点保留完整收录，工具不发送整实体 PUT；题名、属性、混合字段或 `contents` patch 仍拒绝，收录用 `mf-track-content`。旧实例缺少端点时失败关闭，不回退 PUT；409 或未知写入结果只读回查，不重放。发布降级仍使用生命周期入口；`entity.create` 的 DTO 不接受 `contents` 字段。

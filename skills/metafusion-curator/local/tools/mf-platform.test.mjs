@@ -45,11 +45,16 @@ function openApiContract() {
       "/catalog/entities/{id}": { put: openApiOperation("Edit", "Update entity") },
       "/catalog/tracks/{id}/contents": { post: openApiOperation("TrackContentEdit", "Add track content") },
       "/api/catalog/tracks/{id}/contents": { post: openApiOperation("TrackContentEdit", "Add track content") },
+      "/catalog/tracks/{id}/status": { patch: openApiOperation("TrackStatusEdit", "Edit track status without changing contents") },
     },
     components: { schemas: {
       Edit: { type: "object", properties: editProperties },
       RelationEdit: { type: "object", properties: relationProperties },
       TrackContentEdit: { type: "object", properties: { inclusion: { type: "object" }, expected_version: { type: "integer" }, edit_note: { type: "string" }, sources: { type: "array" } } },
+      TrackStatusEdit: { type: "object", additionalProperties: false, required: ["status", "expected_version", "edit_note", "sources"], properties: {
+        status: { type: "string", enum: ["draft", "pending_review", "published"] }, expected_version: { type: "integer", minimum: 1 },
+        edit_note: { type: "string" }, sources: { type: "array" },
+      } },
     } },
   };
 }
@@ -554,6 +559,43 @@ test("entity.update delegates dry-run to guardedUpdate and never issues PUT by d
   }, { requestFn });
   assert.equal(result.ok, true);
   assert.equal(calls.some((call) => call.options.method === "PUT"), false);
+});
+
+test("entity.update 对 Track.status 使用专用 PATCH，并复用已读取的运行时契约", async () => {
+  const before = { id: "track-x", kind: "track", version: 3, title: "Song", status: "draft", medium_id: "medium-x", contents: [] };
+  const after = { ...before, version: 4, status: "published" };
+  const evidence = [{ kind: "url", citation: "status；本次仅将 status 由 draft 置为 published", url: "https://example.test/track" }];
+  let reads = 0;
+  const { requestFn, calls } = mockRequest((pathname, options) => {
+    if (options.method === "PATCH") return { status: 200, body: after };
+    if (pathname.endsWith("/revisions")) return { status: 200, body: { items: [{ id: 10, version: 4, snapshot: { ...after, contents: null }, sources: evidence }] } };
+    if (pathname === "/api/catalog/entities/track-x") return { status: 200, body: reads++ === 0 ? before : after };
+    assert.fail(`unexpected request ${pathname}`);
+  });
+  const result = await runPlan({ action: "entity.update", plan: {
+    id: "track-x", expected_version: 3, patch: { status: "published" }, edit_note: "发布 status", sources: evidence,
+  } }, { apply: true, requestFn });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(calls.filter((call) => call.pathname === "/api/openapi.json").length, 1);
+  assert.equal(calls.filter((call) => call.options.method === "PATCH").length, 1);
+  assert.equal(calls.some((call) => call.options.method === "PUT"), false);
+  assert.deepEqual(calls.find((call) => call.options.method === "PATCH").options.body, {
+    status: "published", expected_version: 3, edit_note: "发布 status", sources: evidence,
+  });
+});
+
+test("entity.update 在旧实例缺少 Track.status PATCH 时拒绝写入", async () => {
+  const contract = openApiContract();
+  delete contract.paths["/catalog/tracks/{id}/status"];
+  const { requestFn, calls } = mockRequest(() => ({ status: 200, body: {
+    id: "track-x", kind: "track", version: 3, status: "draft", title: "Song", medium_id: "medium-x", contents: [],
+  } }), { openapiBody: contract });
+  const result = await runPlan({ action: "entity.update", plan: {
+    id: "track-x", expected_version: 3, patch: { status: "published" }, edit_note: "发布 status",
+    sources: [{ kind: "publication", citation: "status" }],
+  } }, { apply: true, requestFn });
+  assert.equal(result.reason, "track_status_endpoint_not_confirmed_by_openapi");
+  assert.equal(calls.some((call) => ["PUT", "PATCH"].includes(call.options.method)), false);
 });
 
 test("track-content.add delegates to the dedicated helper and defaults to preview", async () => {

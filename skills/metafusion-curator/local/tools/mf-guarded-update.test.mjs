@@ -45,18 +45,40 @@ function revisions(snapshot, revisionSources = [source], version = snapshot.vers
   return { items: [{ id, version, sources: revisionSources, snapshot }] };
 }
 
-function harness({ current = entity(), after = null, put = response({ version: 5 }), revisionItems = null } = {}) {
+function statusContract() {
+  return {
+    openapi: "3.0.3",
+    paths: { "/catalog/tracks/{id}/status": { patch: {
+      requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/TrackStatusEdit" } } } },
+    } } },
+    components: { schemas: { TrackStatusEdit: {
+      type: "object", additionalProperties: false, required: ["status", "expected_version", "edit_note", "sources"],
+      properties: {
+        status: { type: "string", enum: ["draft", "pending_review", "published"] },
+        expected_version: { type: "integer", minimum: 1 }, edit_note: { type: "string" }, sources: { type: "array" },
+      },
+    } } },
+  };
+}
+
+function statusPlan(overrides = {}) {
+  return plan({ patch: { status: "published" }, edit_note: "本次仅将 status 由 draft 置为 published",
+    sources: [{ kind: "url", citation: "官方曲目表支持 status；本次仅将 status 由 draft 置为 published", url: "https://example.test/track" }], ...overrides });
+}
+
+function harness({ current = entity(), after = null, put = response({ version: 5 }), revisionItems = null, contract = statusContract(), contractStatus = 200 } = {}) {
   const calls = [];
   let writes = 0;
   const updated = after ?? { ...current, title: "New title", version: 5, updated_at: "2026-01-02T00:00:00Z" };
   const requestFn = async (path, options = {}) => {
     calls.push({ path, method: options.method ?? "GET", body: options.body, tries: options.tries });
-    if (options.method === "PUT") {
+    if (["PUT", "PATCH"].includes(options.method)) {
       writes += 1;
       return typeof put === "function" ? put({ path, options, calls }) : put;
     }
+    if (path === "/api/openapi.json") return response(contract, contractStatus);
     if (path.endsWith("/revisions")) {
-      const sources = calls.find((call) => call.method === "PUT")?.body?.sources ?? [source];
+      const sources = calls.find((call) => ["PUT", "PATCH"].includes(call.method))?.body?.sources ?? [source];
       return response(revisionItems ?? revisions(updated, sources));
     }
     if (path === "/api/catalog/entities/entity-1") {
@@ -268,6 +290,108 @@ test("Track.title 的预览与 apply 均拒绝 whole-entity PUT", async () => {
     assert.equal(h.writes, 0);
     assert.deepEqual(h.calls.map((call) => call.method), ["GET"]);
   }
+});
+
+test("Track.status 预览确认专用 PATCH 契约，apply 只发送四个白名单字段", async () => {
+  const contents = [{ expression_id: "expr-1", position: 1, locator: { role: "complete" } }];
+  for (const apply of [false, true]) {
+    const current = entity({ kind: "track", status: "draft", medium_id: "medium-1", contents });
+    const h = harness({ current, after: { ...current, status: "published", version: 5 } });
+    const p = statusPlan();
+    const result = await guardedUpdate(p, { requestFn: h.requestFn, apply });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.deepEqual(result.changedFields, ["status"]);
+    assert.equal(h.calls.some((call) => call.method === "PUT"), false);
+    assert.equal(h.writes, apply ? 1 : 0);
+    if (apply) {
+      const sent = h.calls.find((call) => call.method === "PATCH");
+      assert.equal(sent.path, "/api/catalog/tracks/entity-1/status");
+      assert.equal(sent.tries, 1);
+      assert.deepEqual(sent.body, { status: "published", expected_version: 4, edit_note: p.edit_note, sources: p.sources });
+      assert.deepEqual(h.updated.contents, contents);
+      assert.equal(result.fieldChecks.find((check) => check.field === "contents").ok, true);
+    }
+  }
+});
+
+test("Track 空 contents 的 GET [] 与修订 null 等价，非空收录差异仍拒绝", async () => {
+  const current = entity({ kind: "track", status: "draft", medium_id: "medium-1", contents: [] });
+  const after = { ...current, status: "published", version: 5 };
+  const p = statusPlan();
+  const empty = harness({ current, after, revisionItems: revisions({ ...after, contents: null }, p.sources) });
+  assert.equal((await guardedUpdate(p, { requestFn: empty.requestFn, apply: true })).ok, true);
+  const nonempty = harness({ current, after: { ...after, contents: [{ expression_id: "unexpected", position: 0 }] } });
+  const failed = await guardedUpdate(p, { requestFn: nonempty.requestFn, apply: true });
+  assert.equal(failed.outcome, "partial");
+  assert.equal(failed.fieldChecks.find((check) => check.field === "contents").ok, false);
+});
+
+test("Track.status 版本预检失败不写；409 后只读回查且不重放 PATCH", async () => {
+  const current = entity({ kind: "track", status: "draft", medium_id: "medium-1", contents: [] });
+  const after = { ...current, status: "published", version: 5 };
+  const mismatch = harness({ current: { ...current, version: 5 }, after });
+  assert.equal((await guardedUpdate(statusPlan(), { requestFn: mismatch.requestFn, apply: true })).outcome, "version_mismatch");
+  assert.equal(mismatch.writes, 0);
+  const conflict = harness({ current, after, put: response({ error: "version_conflict" }, 409) });
+  const result = await guardedUpdate(statusPlan(), { requestFn: conflict.requestFn, apply: true });
+  assert.equal(result.outcome, "conflict");
+  assert.equal(conflict.writes, 1);
+  assert.equal(conflict.calls.filter((call) => call.method === "PATCH").length, 1);
+});
+
+test("Track.status 写入结果未知时即使回读已发布也不重放或报告 verified", async () => {
+  const current = entity({ kind: "track", status: "draft", medium_id: "medium-1", contents: [] });
+  const after = { ...current, status: "published", version: 5 };
+  for (const put of [response({ error: "network" }, 503), () => { throw new Error("connection closed"); }]) {
+    const h = harness({ current, after, put });
+    const result = await guardedUpdate(statusPlan(), { requestFn: h.requestFn, apply: true });
+    assert.equal(result.ok, false);
+    assert.equal(result.outcome, "unknown");
+    assert.equal(result.applied, null);
+    assert.equal(result.recheck.expectedStateVisible, true);
+    assert.equal(h.writes, 1);
+    assert.equal(h.calls.filter((call) => call.method === "PATCH").length, 1);
+    assert.equal(h.calls.some((call) => call.method === "PUT"), false);
+  }
+});
+
+test("Track 不接受非白名单字段、非法状态与发布降级", async () => {
+  const current = entity({ kind: "track", status: "draft", medium_id: "medium-1", contents: [] });
+  for (const patch of [{ status: "published", title: "Other" }, { status: "published", contents: [] }, { contents: [] }]) {
+    const h = harness({ current });
+    const p = statusPlan({ patch, sources: [{ kind: "publication", citation: "status title contents" }] });
+    assert.equal((await guardedUpdate(p, { requestFn: h.requestFn, apply: true })).reason, "track_requires_dedicated_endpoint");
+    assert.equal(h.writes, 0);
+  }
+  for (const status of [null, "", "unknown"]) {
+    const h = harness({ current });
+    assert.equal((await guardedUpdate(statusPlan({ patch: { status } }), { requestFn: h.requestFn, apply: true })).reason, "invalid_status");
+    assert.equal(h.writes, 0);
+  }
+  const downgrade = harness({ current: { ...current, status: "published" } });
+  assert.equal((await guardedUpdate(statusPlan({ patch: { status: "draft" } }), { requestFn: downgrade.requestFn, apply: true })).reason, "use_lifecycle_endpoint");
+  assert.equal(downgrade.writes, 0);
+});
+
+test("未上线或放宽字段的 Track.status 契约均失败关闭，不回退 PUT", async () => {
+  const current = entity({ kind: "track", status: "draft", medium_id: "medium-1", contents: [] });
+  const contracts = [{ paths: {} }, statusContract(), statusContract(), statusContract(), statusContract(), statusContract(), statusContract(), statusContract()];
+  contracts[1].components.schemas.TrackStatusEdit.additionalProperties = true;
+  contracts[2].components.schemas.TrackStatusEdit.properties.contents = { type: "array" };
+  contracts[3].components.schemas.TrackStatusEdit.required = {};
+  contracts[4].components.schemas.TrackStatusEdit.properties.expected_version.type = "string";
+  contracts[5].components.schemas.TrackStatusEdit.type = "array";
+  contracts[6].components.schemas.TrackStatusEdit.required.push("entity");
+  contracts[7].components.schemas.TrackStatusEdit.properties.status = null;
+  for (const contract of contracts) {
+    const h = harness({ current, contract });
+    const result = await guardedUpdate(statusPlan(), { requestFn: h.requestFn, apply: true });
+    assert.equal(result.reason, "track_status_endpoint_not_confirmed_by_openapi");
+    assert.equal(h.writes, 0);
+  }
+  const unavailable = harness({ current, contractStatus: 503 });
+  assert.equal((await guardedUpdate(statusPlan(), { requestFn: unavailable.requestFn, apply: true })).reason, "track_status_endpoint_not_confirmed_by_openapi");
+  assert.equal(unavailable.writes, 0);
 });
 
 test("关系端点 HTTP 200 但计划没有期望边时标为 unverified", async () => {

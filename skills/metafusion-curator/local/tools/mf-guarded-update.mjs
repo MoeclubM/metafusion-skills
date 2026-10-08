@@ -6,24 +6,18 @@ import { pathToFileURL } from "node:url";
 
 import { request as apiRequest, writableEntity } from "../metafusion-api.mjs";
 
-function authFailure(response) {
-  const codes = {
-    401: ["invalid_token", "authentication_required"],
-    403: ["forbidden"],
-    503: ["auth_unavailable"],
-  };
-  const code = response?.body?.error;
-  return codes[response?.status]?.includes(code) ? { errorCode: code } : {};
-}
-
 const READ_ONLY = new Set(["created_by", "redirect_id", "updated_at"]);
 const IMMUTABLE = new Set(["id", "kind", "version"]);
 const OWNERSHIP = new Set(["work_id", "content_unit_id", "release_id", "medium_id", "parent_id"]);
 const PLAN_KEYS = new Set(["id", "expected_version", "patch", "edit_note", "sources", "verification"]);
 const VERIFY_KEYS = new Set(["tocReleaseIds", "occurrenceEntityIds", "relationEntityIds"]);
+const TRACK_STATUS_PATH = "/api/catalog/tracks/{id}/status";
+const TRACK_STATUSES = new Set(["draft", "pending_review", "published"]);
 
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const isRevisionId = (value) => (typeof value === "string" && value.trim().length > 0)
+  || (Number.isSafeInteger(value) && value > 0);
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -130,7 +124,32 @@ function revisionPath(id) {
 }
 
 function writable(value) {
-  return isRecord(value) ? writableEntity(value) : null;
+  if (!isRecord(value)) return null;
+  const result = writableEntity(value);
+  // GET and revision projections represent an empty Track inclusion set as
+  // [] or null. Only this known empty projection difference is equivalent.
+  if (value.kind === "track" && has(result, "contents") && result.contents === null) result.contents = [];
+  return result;
+}
+
+function trackStatusOperation(contract, status) {
+  if (typeof contract?.openapi !== "string" || !contract.openapi.startsWith("3.")) return null;
+  for (const path of [TRACK_STATUS_PATH, TRACK_STATUS_PATH.slice(4)]) {
+    const operation = contract?.paths?.[path]?.patch;
+    const schemaRef = operation?.requestBody?.content?.["application/json"]?.schema?.$ref;
+    if (schemaRef !== "#/components/schemas/TrackStatusEdit") continue;
+    const schema = contract?.components?.schemas?.TrackStatusEdit;
+    const keys = ["status", "expected_version", "edit_note", "sources"];
+    if (!isRecord(schema?.properties) || schema.type !== "object" || schema.additionalProperties !== false
+      || !Array.isArray(schema.required) || schema.required.length !== keys.length
+      || Object.keys(schema.properties).some((key) => !keys.includes(key))
+      || !keys.every((key) => isRecord(schema.properties[key]) && schema.required.includes(key))
+      || schema.properties.status.type !== "string" || schema.properties.expected_version.type !== "integer"
+      || schema.properties.edit_note.type !== "string" || schema.properties.sources.type !== "array"
+      || !Array.isArray(schema.properties.status.enum) || !schema.properties.status.enum.includes(status)) continue;
+    return { path, method: "patch", requestSchema: "TrackStatusEdit" };
+  }
+  return null;
 }
 
 function fieldDiff(expected, actual, { patched = new Set(), preserveFrom = null } = {}) {
@@ -305,10 +324,10 @@ async function verifyRequested(requestFn, plan, entity, expectedWritable) {
 }
 
 /**
- * Version-guarded whole-entity update. Inject requestFn in tests or offline callers.
+ * Version-guarded update; Track status uses a dedicated PATCH, never entity PUT.
  * A plan only names top-level fields; all HTTP paths and methods are fixed here.
  */
-export async function guardedUpdate(plan, { apply = false, requestFn = apiRequest } = {}) {
+export async function guardedUpdate(plan, { apply = false, requestFn = apiRequest, contract = null } = {}) {
   const invalid = validatePlan(plan);
   if (invalid) return { ok: false, outcome: "rejected", reason: invalid, applied: false };
   if (typeof requestFn !== "function") return { ok: false, outcome: "rejected", reason: "invalid_request_function", applied: false };
@@ -316,10 +335,17 @@ export async function guardedUpdate(plan, { apply = false, requestFn = apiReques
   const first = await get(requestFn, entityPath(plan.id));
   const current = first.response?.body;
   if (first.status !== 200 || !isRecord(current) || current.id !== plan.id || !Number.isSafeInteger(current.version)) {
-    return { ok: false, outcome: "preflight_failed", reason: "current_entity_unavailable", httpStatus: first.status, applied: false, ...authFailure(first.response) };
+    return { ok: false, outcome: "preflight_failed", reason: "current_entity_unavailable", httpStatus: first.status, applied: false };
   }
-  if (current.kind === "track") {
+  const trackStatus = current.kind === "track";
+  if (trackStatus && (Object.keys(plan.patch).length !== 1 || !has(plan.patch, "status"))) {
     return { ok: false, outcome: "rejected", reason: "track_requires_dedicated_endpoint", applied: false };
+  }
+  if (trackStatus && !TRACK_STATUSES.has(plan.patch.status)) {
+    return { ok: false, outcome: "rejected", reason: "invalid_status", applied: false };
+  }
+  if (trackStatus && current.status === "published" && plan.patch.status !== "published") {
+    return { ok: false, outcome: "rejected", reason: "use_lifecycle_endpoint", applied: false };
   }
   if (has(plan.patch, "contents")) {
     return { ok: false, outcome: "rejected", reason: "contents_not_patchable", applied: false };
@@ -343,17 +369,29 @@ export async function guardedUpdate(plan, { apply = false, requestFn = apiReques
   const changes = changeDetails(before, next, changed);
   const expectedAfter = { ...next, version: current.version + 1 };
   const preservedFields = Object.keys(before).filter((key) => !changed.includes(key));
+  let operation;
+  if (trackStatus) {
+    let loaded = contract;
+    if (loaded === null) {
+      const result = await get(requestFn, "/api/openapi.json");
+      if (result.status === 200) loaded = result.response?.body;
+    }
+    operation = trackStatusOperation(loaded, plan.patch.status);
+    if (!operation) return {
+      ok: false, outcome: "preflight_failed", reason: "track_status_endpoint_not_confirmed_by_openapi", applied: false,
+    };
+  }
   if (!apply) {
-    return { ok: true, outcome: "dry_run", applied: false, version: current.version, changedFields: changed, changes, preservedFieldCount: preservedFields.length };
+    return { ok: true, outcome: "dry_run", applied: false, version: current.version, changedFields: changed, changes, preservedFieldCount: preservedFields.length, ...(operation ? { operation } : {}) };
   }
 
   let put;
   try {
-    put = await requestFn(entityPath(plan.id), {
-      method: "PUT",
+    put = await requestFn(trackStatus ? TRACK_STATUS_PATH.replace("{id}", encodeURIComponent(plan.id)) : entityPath(plan.id), {
+      method: trackStatus ? "PATCH" : "PUT",
       tries: 1,
       body: {
-        entity: next,
+        ...(trackStatus ? { status: next.status } : { entity: next }),
         expected_version: current.version,
         edit_note: plan.edit_note.trim(),
         sources: cloneJson(plan.sources),
@@ -371,10 +409,10 @@ export async function guardedUpdate(plan, { apply = false, requestFn = apiReques
   }
   if (putStatus === 0 || putStatus >= 500) {
     const recheck = await readonlyRecheck(requestFn, plan, expectedAfter, putStatus);
-    return { ok: false, outcome: "unknown", reason: "write_result_unknown", httpStatus: putStatus, applied: null, changedFields: changed, changes, recheck, ...authFailure(put) };
+    return { ok: false, outcome: "unknown", reason: "write_result_unknown", httpStatus: putStatus, applied: null, changedFields: changed, changes, recheck };
   }
   if (putStatus < 200 || putStatus >= 300) {
-    return { ok: false, outcome: "rejected", reason: "write_rejected", httpStatus: putStatus, applied: false, changedFields: changed, changes, ...authFailure(put) };
+    return { ok: false, outcome: "rejected", reason: "write_rejected", httpStatus: putStatus, applied: false, changedFields: changed, changes };
   }
 
   const [afterResult, revisionCheck] = await Promise.all([
@@ -428,7 +466,7 @@ async function verifyRevisionFromResult(result, entity, expectedWritable, expect
   }
   const revision = result.response.body.items.find((item) => item?.version === entity.version);
   if (!revision) return { ok: false, state: "current_revision_missing", version: entity.version };
-  if (typeof revision.id !== "string" || !revision.id.trim()) {
+  if (!isRevisionId(revision.id)) {
     return { ok: false, state: "current_revision_id_missing", version: entity.version };
   }
   const snapshot = writable(revision.snapshot);
@@ -447,10 +485,10 @@ async function verifyRevisionFromResult(result, entity, expectedWritable, expect
 function usage() {
   return [
     "用法: node mf-guarded-update.mjs --plan <JSON文件> [--apply] [--out <结果JSON文件>]",
-    "默认仅预览；只有 --apply 才会发出一次实体 PUT。--apply 只是执行开关，不代表授权证明。",
+    "默认仅预览；只有 --apply 才会发出一次受控写入。--apply 只是执行开关，不代表授权证明。",
     "--out 保存完整结构化结果，含目标字段 before/after 与逐项核验，不含原始 API 响应体。",
     "patch 对象递归合并；未列出的对象键保留。数组按整数组替换，null 表示显式清空；不支持隐式删除键。",
-    "Track 禁止任何 whole-entity PUT（包括 title），因为 GET 可能裁剪隐藏 contents；请使用 mf-track-content 专用工具。",
+    "Track 禁止 whole-entity PUT；仅 status patch 经运行时 OpenAPI 确认后走专用 PATCH，contents 仍用 mf-track-content。",
     "不提供全部可见范围猜测开关；非 Track 的 contents patch 也拒绝。",
   ].join("\n");
 }
