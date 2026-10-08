@@ -391,6 +391,9 @@ export async function putEntity(id, mutate, {
   validateWrite({ editNote, sources });
 
   const current = requireOk(await getEntity(id), "读取实体");
+  if (current.kind === "track") {
+    throw new Error("Track 禁止整实体 PUT；收录与状态使用专用端点，不能回写可见性裁剪后的 contents");
+  }
   const entity = writableEntity(current);
   const version = current.version;
   const outcome = mutate(entity);
