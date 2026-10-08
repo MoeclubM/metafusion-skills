@@ -15,45 +15,20 @@
 
 上述仅演示属性落点，完整创建信封与必填值见 [载荷模板](reference-api-templates.md)。不要向当前请求添加已移除的 `types`；正式用途、媒介属性和身份依实际字段、收录与来源表达，标签不承担业务分类约束。新版可选 creation_form 仅作为 Work 的受控描述与模板条件，词项和模板可通过 GUI 编辑。
 
-## kind → 种子可写属性字段
+## 实体字段与动态属性
 
-下表是源码种子的对照；实例可通过后台 GUI 调整字段 `applicable_kinds`，实际以当前生效定义为准，不靠选择展示模板改变可写范围。
-
-| kind | `attributes` 种子字段 |
-| --- | --- |
-| `work` | `creation_form`、`language`、`edition_date`、`copyright`、`imdb`、`infobox`、`events`、`duration`、`duration_source`、`author`、`volume_count`、`magazine`、`begin_date`、`end_date`、`episodes`、`platform`、`broadcast_start`、`broadcast_weekday`、`broadcast_end`、`air_network`、`tags` |
-| `agent` | `tags` |
-| `collection` | `language`、`tags` |
-| `content_unit` | `language`、`entry_role`、`air_date`、`tags` |
-| `expression` | `language`、`duration`、`version_label`、`isrc`、`events`、`tags` |
-| `release` | `catalog_number`、`barcode`、`isbn`、`edition_date`、`edition_type`、`edition_batch`、`country`、`publisher`、`packaging`、`distribution_channel`、`platform`、`attachments`、`store_bonuses`、`events`、`tags` |
-| `medium` | `catalog_number`、`format`、`role`、`tags` |
-| `track` | `duration`、`role`、`tags` |
-
-表中只列 attributes 的字段码。title、original_language、translations、attributes、external_ids、pictures、status、position、number 是共用实体字段；结构引用按 kind 归属，见 [载荷模板](reference-api-templates.md)。created_by、updated_at、redirect_id 是只读投影。
+title、original_language、translations、attributes、external_ids、pictures、status、position、number 是共用实体字段；归属与结构引用按 kind 校验，见 [载荷模板](reference-api-templates.md)。created_by、updated_at、redirect_id 是只读投影。attributes 不维护固定种子白名单：取当前启用字段的 applicable_kinds，不能靠选择模板扩大范围。
 
 两个易错点：
 
-- `duration_source` 是 **entity 字段且只能指向 `expression`**；`publisher` 是 entity 字段且只能指向 `agent`
+- 默认种子中 `duration_source` 是 entity 字段且指向 expression，`publisher` 是 entity 字段且指向 agent；当前目标 kind 范围仍取 definitions
   （不能指向 release 自己的文本名）。entity 字段要求目标实体**存在、kind 相符、对当前用户可见且未 deleted/merged**。
 - `tags` 是八种实体共通的自由标签，不是受控业务分类，也不能单独证明实体身份。版本类别、发行批次、同梱物和店铺特典仍优先写到 `edition_type` / `edition_batch` / `attachments` / `store_bonuses`；标签不能代替这些结构化事实。
 
-## 词表全量（写入用词项代码，显示名由前端本地化）
+## 词表与模板
 
-| 词表 | 词项 |
-| --- | --- |
-| `format` | `bd`、`cassette`、`cd`、`digital`、`dvd`、`paper`、`sacd`、`uhd_bd`、`vinyl`、`web` |
-| `role` | `primary`、`side`、`extra`、`supplement`、`commentary` |
-| `release_role` | `primary`、`compilation`、`supplement` |
-| `packaging` | `standard`、`jewel`、`slipcase`、`box`、`boxset`、`digipak` |
-| `edition_type` | `standard`、`limited`、`deluxe`、`boxset` |
-| `edition_batch` | `first_press`、`regular`、`reissue`、`reprint` |
-| `distribution_channel` | `physical`、`digital`、`mixed`、`web` |
-| `entry_role` | `main`、`opening`、`ending`、`trailer`、`extra`、`other` |
-| `character_rank` | `main`、`supporting`、`guest`、`ensemble`、`narrator`、`cameo` |
-| `locator_reference` | `medium`、`track` |
+枚举字段引用 `document.vocabularies`，写当前启用词项 code，不能提交本地化 names。字段必须启用且适用于当前 kind；词表可扩展，不把静态码表当作实例能力。非法词项返回 `invalid_term`，消息可能含字段前缀。
 
-词表外的值一律 `invalid_term`（消息可能带字段前缀，如 `packaging: invalid_term`）。
 新版 `creation_form` 词项来自现有创作模板码及 song；不在本页复制清单，实际以实例启用词项为准。creation_form 可省略，不证明身份或限制其他字段可写性。
 模板自动选择只按显式 `match` 与 `priority`，并列时回到通用事实布局；缺少 match 的模板仅供手工选择，不按已填字段猜类别。显式 `match: []` 表示该 kind 的兜底条件。
 `country`、`platform`、`version_label`、`credit_role`、`scope`、`magazine` 是**自由文本**，不要当枚举填代码。
@@ -62,7 +37,7 @@
 
 ### `attachments` / `store_bonuses` / `events`（list，元素是同一个记录组）
 
-三个字段形状完全相同，各元素支持的子字段（共 13 个）：
+以下是默认记录形状；实例可能扩展子字段，写入前核当前 definitions：
 
 | 子字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -88,7 +63,7 @@
     ]
 
 按语义选字段：`attachments` = 包装内同梱物；`store_bonuses` = 按渠道分发的店特；
-`events` = 发布/放送事件。三者都能出现在 `release`（`events` 也在 `expression`、所有 work 类型上）。
+`events` = 发布/放送事件。三者都能出现在 `release`（默认 `events` 也适用于 expression/work，实际取 applicable_kinds）。
 
 ### `infobox`
 
@@ -112,8 +87,8 @@
 - 显式配对的区间（`page_end` ↔ `page_start`、`time_end_ms` ↔ `time_start_ms`）**只在两端都有值**时校验大小；
   终点单独存在不会被拒。
 - 未知子键 → `locator: unknown_field: <键>`。
-- 黑胶的 A/B 面位：**没有面位字段**，可用 `track.number` 写 `"A1"`（`number` 是字符串，保留官方原文）；
-  线上有一条 `vinyl_track_locator` 场景（scheme）但 `enabled=false`。
+- 黑胶的 A/B 面位：默认未提供面位字段，可用 `track.number` 写 `"A1"`（`number` 是字符串，保留官方原文）；
+  是否存在可用的面位 scheme 取实例当前 definitions，不从旧快照推断。
 - `time_*` 与 `page_*` 语义不同：同一 Expression 在不同版本换页码时，对比口径看 `time_*`。
 
 ### `inclusion_attributes` / `subject_attributes`
@@ -146,7 +121,7 @@
 症状是"条目有 Wikipedia / Bangumi / Steam，却没有一条官方链接"。
 
 `steam` 预设的 category 是 `work`：写到 release 上会 400 `invalid_external_category`。
-`?q=` 检索会返回 draft 实体，但 entity 型字段的引用校验要求目标可见，容易写出"看似存在却写不进去"的载荷。
+搜索结果仅覆盖当前调用者可见实体；entity 引用还受目标状态、kind 和公开实体引用约束影响，搜索命中不保证引用可写。
 
 ## 写错时的错误码
 
@@ -154,7 +129,7 @@
 | --- | --- | --- |
 | 字段不适用于本 kind | `unknown_field: <码>` | 检查 `document.fields[码].applicable_kinds` 与当前实体 kind，不通过选择模板扩大白名单 |
 | 枚举值不在词表 | `invalid_term`（可能带字段前缀） | 用词项代码，不提交显示名 |
-| 组字段写了未声明的子键 | `unknown_field: <键>`（可能带前缀如 `locator: `） | 只写本文列出的子字段 |
+| 组字段写了未声明的子键 | `unknown_field: <键>`（可能带前缀如 `locator: `） | 只写当前定义声明且启用的子字段 |
 | `locator` 有子字段无锚点 | `anchor_required: relative_to` | 补 `relative_to` |
 | 外部 ID 键未注册 | `invalid_external_id` | 先读 `/api/catalog/external-databases` |
 | 翻译形状/长度不对 | `invalid_translation` / `invalid_locale` / `translation_too_long` | locale 必须是合法语言标签，`title` 非空且 ≤2000，`aliases` 单项 ≤500 |

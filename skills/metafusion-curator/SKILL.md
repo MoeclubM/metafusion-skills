@@ -14,7 +14,8 @@ description: MetaFusion 实体编目、查重、关系维护与数据质检。�
 - 开始实例操作时核 OpenAPI 与 definitions；字段、关系、词项使用当前启用定义。
 - 查重核 kind、内容身份、父级作用域与 canonical ID；同名或同 Work 不证明同一 Expression。正式题名不机械清洗。
 - Release `subjects` 声明 Work，Track `contents` 引用 Expression；先声明 subjects，再补收录。
-- 写入需任务授权，先预览；保留未改字段，带当前版本，写后回读。Track 禁止整实体 PUT；冲突或结果不明不重放。
+- 写入需任务授权，先预览；保留未改字段，带当前版本，写后回读。Track 禁止整实体 PUT，收录与状态使用实例支持的专用端点；冲突或结果不明不重放。
+- Track 题名、属性与图片当前缺专用编辑入口；报告缺口，不能借状态或收录接口改写，也不能回退 PUT。
 
 ## 按需参考
 

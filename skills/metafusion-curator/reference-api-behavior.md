@@ -22,6 +22,7 @@
 - 严格 DTO 会拒绝未知字段。创建、实体更新和关系操作的请求形状只查[载荷模板](reference-api-templates.md)及实例 OpenAPI；动态字段或枚举不从模板抄作服务器能力。
 - 实体 `PUT` 是整实体替换，必须带当前 `expected_version` 并保留所有未修改的可写字段。正式题名、季名按官方证据维护，不机械改写；版次品番、包装或规格不拼入 Work 题名。
 - **禁止对任何 Track 执行整实体 PUT，包括只改标题。** Track 的 GET `contents` 可能按当前用户可见性裁剪，回写该投影会丢失被裁剪的收录。Track 内容只使用目标实例支持的专用 contents 操作；本地使用哪个受控工具由[工具入口](local/tools/README.md)与工具 `--help` 决定。
+- Track 状态使用 `PATCH /api/catalog/tracks/{id}/status`，由服务端事务读取完整事实；先核 OpenAPI 支持，缺端点不回退 PUT。请求只含 `status/expected_version/edit_note/sources`；发布降级仍走 unpublish，载荷见[模板](reference-api-templates.md#track)。
 - 单条 Track contents 的 `inclusion.sources` 省略时，若 `expression_id`、`locator`、`attributes` 与旧项一致则保留旧来源；新增或这些事实有变化则继承本次编辑的顶层 `sources`。显式提供项级 `sources` 时优先。
 - 写请求不得自动重试。收到 `409 version_conflict` 或写入结果不明时，先回读实体和当前修订，核对是否已生效及并发改动，再决定是否基于新版本重做；不得盲目重放。
 - 写后按任务核对实体版本与字段、当前修订、关系和 occurrences。`2xx`、工具成功标志或 `readbackOK` 不能代替内容复核；操作部分完成时报告 partial。

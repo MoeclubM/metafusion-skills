@@ -4,7 +4,7 @@
 
 ## 请求头与证据
 
-所有写入接口都是 `/api/catalog/*`，需要登录。凭据三选一（都放在同一个请求头里）：
+实体与关系写入位于 `/api/catalog/*`，需要登录；定义管理、导入与文件操作的路径见[接口范围](reference-endpoint-scope.md)。凭据三选一（都放在同一个请求头里）：
 
     Authorization: Bearer <会话令牌 / OAuth 访问令牌 / PAT>
     # PAT 是 `mfp_` 前缀的长期机器凭据：跑脚本或 Agent 时用它，不要共用某个人的会话令牌；
@@ -242,6 +242,8 @@ PUT 是**整实体替换**：带当前 `expected_version`，写后回读并逐�
 
 ## track
 
+下例是服务端创建载荷。`mf-platform entity.create` 不接受 `contents`，使用工具时先建 Track，再以专用收录操作添加；这是工具范围限制，不是 Entity DTO 缺少该字段。
+
     {
       "entity": {
         "kind": "track",
@@ -274,11 +276,7 @@ PUT 是**整实体替换**：带当前 `expected_version`，写后回读并逐�
   提交 `work_id` 会因为不在该 kind 的允许字段里被拒绝。
 - 同一 Track 内 `position` 唯一；同一 `expression_id` **且 locator 完全相同**才算重复收录。
   同一表达按不同时间段切片可以在同一 Track 多次出现（如混音轨引用 0–30s 与 60–90s）。
-- `locator` 的子字段码来自 definitions 的 `locator` 组；种子默认含 `relative_to`（锚点，**只有 `medium` / `track`**）、
-  `page_start` / `page_end` / `path` / `chapter`（本版定位，随排版变化）与 `time_start_ms` / `time_end_ms`
-  （内容范围，参与版本对比）。**有任一子字段时必须给 `relative_to`**；显式配对的起终点
-  （`page_end`↔`page_start`、`time_end_ms`↔`time_start_ms`）只在**两端都有值**时校验大小，终点单独存在不报错。
-  整轨收录允许 locator 为空。
+- `locator` 按当前 definitions 的组字段校验；锚点与区间规则见 [定位字段](reference-types-and-fields.md#locator)，整轨收录允许空 locator。
 
 书籍场景的 locator 示例：
 
@@ -302,6 +300,18 @@ PUT 是**整实体替换**：带当前 `expected_version`，写后回读并逐�
 
 expected_version 来自 Track。PUT `/api/catalog/tracks/{id}/contents/{position}` 使用相同信封，URL 为回读的旧位置，inclusion.position 可以重排。DELETE 同路径只提交 expected_version/edit_note/sources；不要省略请求体。写后回读 Track、occurrences 与修订，409 时回读并合并；不要根据不可见记录的猜测位置操作。不可见收录或旧 position 无法核实时停止该项操作并报告未知。Track contents 来源省略规则见[API 行为参考](reference-api-behavior.md)。
 
+### 单独修改状态（先核 OpenAPI 支持）
+
+    PATCH /api/catalog/tracks/<track-uuid>/status
+    {
+      "status": "published",
+      "expected_version": 7,
+      "edit_note": "核对官方曲序与现有收录后发布",
+      "sources": [{"kind": "url", "citation": "官方曲序：支持已核对的 Track 发布状态", "url": "https://example.org/disc"}]
+    }
+
+DTO 不含 `entity` 或 `contents`，服务端在事务内保留完整收录；`status` 仅接受 draft/pending_review/published，并遵循现有生命周期权限。已发布实体降级走 unpublish，不能借本端点绕过。缺端点不回退整实体 PUT。
+
 ## 关系
 
     POST /api/catalog/relations
@@ -320,10 +330,7 @@ expected_version 来自 Track。PUT `/api/catalog/tracks/{id}/contents/{position
 
 - 关系码与允许的两端 `source_kinds` / `target_kinds` 来自 `GET /api/catalog/definitions` 的 `document.relations`，
   只使用其中 `enabled` 的条目；关系码清单只从 `document.relations` 取。
-  种子关系码的方向、端点与属性字段见 [关系码、方向与属性](reference-relations.md)。
-- 种子关系允许 9 个属性字段，实例可通过当前定义增改：`role`、`credit_role`、`character_rank`、`character`（entity → `agent`）、
-  `context`（entity → `work`\|`content_unit`\|`expression`\|`release`）、`language`、`begin_date`、`end_date`、`scope`。
-- 服务端拒绝自环（`invalid_endpoints`）与 acyclic 成环（`relation_cycle`；同 cycle_group 多码共同构图，未声明则单码）；反向判重与基数、作用域、顺序唯一依当前定义。
+  方向、端点与属性及约束见 [关系规则](reference-relations.md)。
 - 更新用 `PUT /api/catalog/relations/{id}`；删除用 `DELETE /api/catalog/relations/{id}`，
   **必须带 body**（`expected_version` + `edit_note` + `sources`），不带版本 → 409，完全不带 body → 400。
 
