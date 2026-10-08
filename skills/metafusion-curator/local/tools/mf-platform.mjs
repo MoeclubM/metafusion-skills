@@ -32,6 +32,7 @@ const READ_ACTIONS = [
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const has = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const isNonEmptyString = (value) => typeof value === "string" && value.trim().length > 0;
+const isRevisionId = (value) => isNonEmptyString(value) || (Number.isSafeInteger(value) && value > 0);
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -591,7 +592,13 @@ async function entityCreatePreflight(plan, requestFn) {
   const defsResult = await readDefinitions(requestFn);
   if (defsResult.error) return { error: defsResult.error };
   const { document } = defsResult;
-  const structure = document.structure[kind];
+  let structure = document.structure[kind];
+  // Agent, Collection, and Work have no structural reference fields in the
+  // fixed entity model. The live definitions omit their structure sections;
+  // treat those omissions as an explicitly empty structure contract.
+  if (!isRecord(structure) && ["agent", "collection", "work"].includes(kind)) {
+    structure = { fields: null };
+  }
   if (!isRecord(structure)) return { error: { ok: false, outcome: "partial", reason: "kind_structure_definition_missing" } };
   const entity = cloneJson(plan.entity);
   entity.id = "";
@@ -759,11 +766,11 @@ async function createEntity(plan, { apply, requestFn, findIdentityFn = findIdent
     if (currentRevisions.length === 1) {
       const revision = currentRevisions[0];
       revisionCheck = {
-        ok: isNonEmptyString(revision.id) && positiveVersion(revision.version) && isRecord(revision.snapshot)
+        ok: isRevisionId(revision.id) && positiveVersion(revision.version) && isRecord(revision.snapshot)
           && validEntityShape(revision.snapshot, after.id) && revision.snapshot.version === revision.version
           && same(writableEntity(revision.snapshot), writableEntity(after))
           && same(revision.sources, plan.sources),
-        idPresent: isNonEmptyString(revision.id),
+        idPresent: isRevisionId(revision.id),
         version: revision.version,
         matchesCurrentEntity: isRecord(revision.snapshot) && validEntityShape(revision.snapshot, after.id)
           && same(writableEntity(revision.snapshot), writableEntity(after)),
@@ -976,7 +983,7 @@ async function runReadPlan(plan, requestFn) {
       const matches = revisionsResult.body.items.filter((revision) => revision?.version === currentResult.body.version);
       if (matches.length !== 1) return { ok: false, outcome: "partial", reason: "current_version_revision_missing_or_ambiguous", currentVersion: currentResult.body.version };
       const revision = matches[0];
-      if (!isNonEmptyString(revision.id) || !positiveVersion(revision.version) || !isRecord(revision.snapshot)
+      if (!isRevisionId(revision.id) || !positiveVersion(revision.version) || !isRecord(revision.snapshot)
         || !validEntityShape(revision.snapshot, plan.id) || revision.snapshot.version !== revision.version) {
         return { ok: false, outcome: "partial", reason: "current_revision_shape_invalid", currentVersion: currentResult.body.version };
       }

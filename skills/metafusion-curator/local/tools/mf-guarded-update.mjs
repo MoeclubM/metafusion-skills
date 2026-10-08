@@ -75,11 +75,16 @@ function validSources(sources, patchKeys) {
   const covered = new Set();
   for (const source of sources) {
     if (!isRecord(source) || Object.keys(source).some((key) => !["kind", "citation", "url"].includes(key))) return false;
-    if (!["url", "publication"].includes(source.kind) || typeof source.citation !== "string" || !source.citation.trim()) return false;
+    if (!["url", "publication", "self"].includes(source.kind) || typeof source.citation !== "string" || !source.citation.trim()) return false;
     if (source.kind === "url" && !validHttpUrl(source.url)) return false;
     if (source.url !== undefined && !validHttpUrl(source.url)) return false;
-    const citation = source.citation.toLocaleLowerCase();
-    for (const key of patchKeys) if (citation.includes(key.toLocaleLowerCase())) covered.add(key);
+    // A self source may be retained as maintenance history, but it cannot
+    // support a newly patched fact. Each patched field still needs a source
+    // that makes an external assertion.
+    if (source.kind !== "self") {
+      const citation = source.citation.toLocaleLowerCase();
+      for (const key of patchKeys) if (citation.includes(key.toLocaleLowerCase())) covered.add(key);
+    }
   }
   return patchKeys.every((key) => covered.has(key));
 }

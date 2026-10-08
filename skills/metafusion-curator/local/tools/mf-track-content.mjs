@@ -9,6 +9,8 @@ import { request as apiRequest, writableEntity } from "../metafusion-api.mjs";
 const CONTENTS_PATH = "/api/catalog/tracks/{id}/contents";
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const has = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+const isRevisionId = (value) => (typeof value === "string" && value.trim().length > 0)
+  || (Number.isSafeInteger(value) && value > 0);
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -184,13 +186,31 @@ function failure(reason, extra = {}) {
   return { ok: false, outcome: "preflight_failed", reason, applied: false, ...extra };
 }
 
+function openApiSupportsEndpoint(document, endpoint, method) {
+  const supports = (path) => isRecord(document.paths[path]) && isRecord(document.paths[path][method]);
+  if (supports(endpoint)) return true;
+
+  for (const server of Array.isArray(document.servers) ? document.servers : []) {
+    if (typeof server?.url !== "string") continue;
+    let prefix;
+    try {
+      prefix = new URL(server.url, "https://metafusion.invalid").pathname.replace(/\/+$/, "");
+    } catch {
+      continue;
+    }
+    if (!prefix || !endpoint.startsWith(`${prefix}/`)) continue;
+    if (supports(endpoint.slice(prefix.length))) return true;
+  }
+  return false;
+}
+
 async function preflight(plan, requestFn) {
   const openapiPath = "/api/openapi.json";
   const openapiResult = await read(requestFn, openapiPath);
   if (openapiResult.status !== 200 || !isRecord(openapiResult.body) || !isRecord(openapiResult.body.paths)) {
     return { error: failure("openapi_unavailable", { httpStatus: openapiResult.status }) };
   }
-  if (!isRecord(openapiResult.body.paths[CONTENTS_PATH]) || !isRecord(openapiResult.body.paths[CONTENTS_PATH].post)) {
+  if (!openApiSupportsEndpoint(openapiResult.body, CONTENTS_PATH, "post")) {
     return { error: failure("contents_add_endpoint_not_in_openapi", { httpStatus: 200 }) };
   }
 
@@ -340,7 +360,7 @@ function verifyRevisionReadback(response, trackCheck, plan) {
   const current = writableEntity(trackCheck.entity);
   const snapshotMatches = !!snapshot && same(snapshot, current);
   const sourcesMatch = same(revision.sources, plan.sources);
-  const idValid = typeof revision.id === "string" && revision.id.trim().length > 0;
+  const idValid = isRevisionId(revision.id);
   const ok = snapshotMatches && sourcesMatch && idValid;
   return {
     state: ok ? "verified" : "failed",

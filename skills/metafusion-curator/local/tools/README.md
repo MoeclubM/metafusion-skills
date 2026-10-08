@@ -33,3 +33,4 @@ node mf-definitions.mjs plan reviewed-field-create.json --out preview-field.json
 - 平台/定义默认预览；执行需 `--apply --out`，执行开关不提供任务授权。定义工具仅支持词项 upsert 与受控单字段新增；服务端 impact issues 阻断，写后校验完整文档回读。
 - 平台入口不含删除、生命周期、上传或任意 HTTP；Track 不做整实体 PUT。其余写入与失败判读见 [API 行为](../../reference-api-behavior.md)，证据见 [来源策略](../../reference-source-policy.md)。
 - Track 的 `entity.update` 仅接受 `patch: {"status":"published"}` 等单个状态字段，经运行时 OpenAPI 确认后调用 `PATCH /api/catalog/tracks/{id}/status`；必须提供当前 `expected_version`、`edit_note` 与支持 `status` 的来源。专用端点保留完整收录，工具不发送整实体 PUT；题名、属性、混合字段或 `contents` patch 仍拒绝，收录用 `mf-track-content`。旧实例缺少端点时失败关闭，不回退 PUT；409 或未知写入结果只读回查，不重放。发布降级仍使用生命周期入口；`entity.create` 的 DTO 不接受 `contents` 字段。
+- 2026-10-08 实测：无收录的新建 Track 回读会把空收录投影为 `contents: []`，而创建响应与修订快照为 `null`，`mf-platform` 因此报 `partial`（`create_readback_not_fully_verified`，`requestedFieldsMatch=true`）。实体本身已按请求字段建立；核验时逐字段比对读回与 v1 快照，差异只落在 `contents`（`[]` ↔ `null`）即视为已知投影差异。
