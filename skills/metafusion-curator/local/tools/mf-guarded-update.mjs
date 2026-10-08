@@ -6,6 +6,16 @@ import { pathToFileURL } from "node:url";
 
 import { request as apiRequest, writableEntity } from "../metafusion-api.mjs";
 
+function authFailure(response) {
+  const codes = {
+    401: ["invalid_token", "authentication_required"],
+    403: ["forbidden"],
+    503: ["auth_unavailable"],
+  };
+  const code = response?.body?.error;
+  return codes[response?.status]?.includes(code) ? { errorCode: code } : {};
+}
+
 const READ_ONLY = new Set(["created_by", "redirect_id", "updated_at"]);
 const IMMUTABLE = new Set(["id", "kind", "version"]);
 const OWNERSHIP = new Set(["work_id", "content_unit_id", "release_id", "medium_id", "parent_id"]);
@@ -335,7 +345,7 @@ export async function guardedUpdate(plan, { apply = false, requestFn = apiReques
   const first = await get(requestFn, entityPath(plan.id));
   const current = first.response?.body;
   if (first.status !== 200 || !isRecord(current) || current.id !== plan.id || !Number.isSafeInteger(current.version)) {
-    return { ok: false, outcome: "preflight_failed", reason: "current_entity_unavailable", httpStatus: first.status, applied: false };
+    return { ok: false, outcome: "preflight_failed", reason: "current_entity_unavailable", httpStatus: first.status, applied: false, ...authFailure(first.response) };
   }
   const trackStatus = current.kind === "track";
   if (trackStatus && (Object.keys(plan.patch).length !== 1 || !has(plan.patch, "status"))) {
@@ -409,10 +419,10 @@ export async function guardedUpdate(plan, { apply = false, requestFn = apiReques
   }
   if (putStatus === 0 || putStatus >= 500) {
     const recheck = await readonlyRecheck(requestFn, plan, expectedAfter, putStatus);
-    return { ok: false, outcome: "unknown", reason: "write_result_unknown", httpStatus: putStatus, applied: null, changedFields: changed, changes, recheck };
+    return { ok: false, outcome: "unknown", reason: "write_result_unknown", httpStatus: putStatus, applied: null, changedFields: changed, changes, recheck, ...authFailure(put) };
   }
   if (putStatus < 200 || putStatus >= 300) {
-    return { ok: false, outcome: "rejected", reason: "write_rejected", httpStatus: putStatus, applied: false, changedFields: changed, changes };
+    return { ok: false, outcome: "rejected", reason: "write_rejected", httpStatus: putStatus, applied: false, changedFields: changed, changes, ...authFailure(put) };
   }
 
   const [afterResult, revisionCheck] = await Promise.all([
