@@ -8,11 +8,11 @@
 
 | 来源 | 连接器覆盖 | 输入与结果注意事项 |
 | --- | --- | --- |
-| Universal Music Japan | `umj.product` 官方商品页 | 输入 `artist-slug/product-code` 并严格核对页面品番。结果含 `image_urls` 候选和 `field_status` 字段状态；按字段复核，不据此自动认定图片或曲目归属。 |
-| Pony Canyon、Canime、Sony Music | `publisher.pony_canyon`、`publisher.canime`、`publisher.sony_music` 官方产品页 | 输入形式查工具 help。页面缺字段时按未核实处理。 |
+| Universal Music Japan | `umj.product` 官方商品页 | 输入 `artist-slug/product-code` 并严格核对页面品番：有可见「品番」行时须与请求完全一致（`verified_exact`）；数字发行页无品番行时须 canonical 路径 slug+品番与请求一致且 ld+json 面包屑/WebPage 双重确认同一品番（`verified_canonical_ld`），否则 `identity_mismatch`。结果含 `image_urls` 候选和 `field_status` 字段状态；按字段复核，不据此自动认定图片或曲目归属。 |
+| Pony Canyon、Canime、Sony Music | `publisher.pony_canyon`、`publisher.canime`、`publisher.sony_music` 官方产品页 | 输入形式查工具 help。页面缺字段时按未核实处理；Sony 不存在的品番回落到艺人索引页时报 `notfound`（不拼输入品番）。Pony/Canime 支持 `YYYY.M.D 発売` 发售日与价格窗口回退全文。 |
 | Bushiroad Music（`bushiroad_music`；别名 `bushiroad`） | `publisher.bushiroad_music` 商品页 | 示例 `node mf-source.mjs run publisher.bushiroad_music BRMM-11078` 查询同页候选 BRMM-11077/11078。品番直达失败时扫描官方目录 ACF（非 WordPress search）；`requested_catalog_number` 保留请求品番，多版时 `catalog_number` 为 `null`，`catalog_candidates` 形如 `{edition,catalog_number}`。 |
 | BanG Dream（`bang_dream`；别名 `bangdream`） | `publisher.bang_dream` Discography 页面 | 只接受 HTTPS `/discographies/{numeric-id}/` 完整 URL；URL 未提供品番时 `requested_catalog_number` 为 `null`。多版时 `catalog_number` 为 `null`，候选见 `catalog_candidates`（`{edition,catalog_number}`）。 |
-| Wikidata、Bangumi、MusicBrainz | `wikidata.*`；`bangumi.*`；`musicbrainz.*` 搜索或记录读取 | 搜索结果是候选；核对 kind、具体作品/版次与身份锚点。它们作为聚合或编目来源不能仅凭站点名升级为 CORE-P1。 |
+| Wikidata、Bangumi、MusicBrainz | `wikidata.*`；`bangumi.*`；`musicbrainz.*` 搜索或记录读取（含 `musicbrainz.release.barcode` 条码反查与 `musicbrainz.release.catno` 品番反查；`release.search` 仅题名检索） | 搜索结果是候选；核对 kind、具体作品/版次与身份锚点。它们作为聚合或编目来源不能仅凭站点名升级为 CORE-P1。 |
 
 Bushiroad Music / BanG Dream：`price` 保留来源原始字符串，仅唯一明确归版时填写，否则为 `null` 并保留 `price_candidates`；不按价格顺序猜版。候选项为 `{edition,catalog_number,amount,currency,tax_included,raw}`，`raw` 是来源价格原文；日元（`円` / `¥`）为 `JPY`，币种不明时为 `null`，`tax_included` 为 `true` / `false` / `null`。`field_status.price` 为 `source_reported_unverified` / `multiple_editions_ambiguous` / `not_found`；`image_urls` 不自动归版。来源采集价格是证据，不表示目标 Release `attributes` 已有定价落点。
 

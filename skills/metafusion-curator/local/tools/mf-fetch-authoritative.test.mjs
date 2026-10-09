@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   fetchBangumiSubject,
@@ -12,6 +13,7 @@ import {
   searchBangumiSubjects,
   searchMusicBrainzArtist,
   searchMusicBrainzRelease,
+  searchMusicBrainzReleaseByField,
   searchWikidata,
 } from "./mf-fetch-authoritative.mjs";
 import { paceConfig } from "./mf-fetch-providers.mjs";
@@ -37,6 +39,8 @@ const productPage = `
 </body></html>`;
 
 const UUID = "5b11f4ce-a62d-471e-81fc-a69a8278c7da";
+const UMJ_DIGITAL_FIXTURE = readFileSync(new URL("./__fixtures__/umj-digital-ur1as-01267.html", import.meta.url), "utf8");
+const UMJ_DIGITAL_MISMATCH_FIXTURE = readFileSync(new URL("./__fixtures__/umj-digital-canonical-mismatch.synthetic.html", import.meta.url), "utf8");
 const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: { "content-type": "application/json; charset=utf-8" },
@@ -72,6 +76,42 @@ test("UMJ rejects a page without the exact visible requested product code", asyn
       pace: { attempts: 1 },
     }),
     error => error.kind === "identity_mismatch" && /完全匹配/.test(error.message),
+  );
+});
+
+test("UMJ digital page without visible 品番 passes via canonical + ld+json double confirmation", async () => {
+  const result = await fetchUniversalMusicJapanProduct("andteam", "ur1as-01267", {
+    fetchImpl: async () => new Response(UMJ_DIGITAL_FIXTURE, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }),
+    pace: { attempts: 1 },
+  });
+  assert.equal(result.catalog_number, "UR1AS-01267");
+  assert.equal(result.field_status.catalog_number, "verified_canonical_ld");
+  assert.equal(result.product_title, "Fearless[デジタル配信]");
+  assert.equal(result.artist, "&TEAM");
+  assert.equal(result.format, "デジタル配信");
+  assert.equal(result.release_date, "2026-10-10");
+  assert.ok(result.image_urls.length >= 1);
+});
+
+test("UMJ digital fallback still rejects canonical/ld+json pointing at another code", async () => {
+  await assert.rejects(
+    fetchUniversalMusicJapanProduct("andteam", "ur1as-01267", {
+      fetchImpl: async () => new Response(UMJ_DIGITAL_MISMATCH_FIXTURE, { status: 200 }),
+      pace: { attempts: 1 },
+    }),
+    error => error.kind === "identity_mismatch",
+  );
+  await assert.rejects(
+    fetchUniversalMusicJapanProduct("andteam", "ur1as-01267", {
+      // canonical 仍指向请求码，但 ld+json 面包屑/WebPage name 指向另一品番：双重确认不一致即拒绝。
+      fetchImpl: async () => new Response(
+        UMJ_DIGITAL_FIXTURE.replace('"name":"UR1AS-01267 - &amp;TEAM"', '"name":"UR1AS-99999 - &amp;TEAM"')
+          .replace('"name":"UR1AS-01267"', '"name":"UR1AS-99999"'),
+        { status: 200 },
+      ),
+      pace: { attempts: 1 },
+    }),
+    error => error.kind === "identity_mismatch",
   );
 });
 
@@ -170,6 +210,38 @@ test("MusicBrainz release search returns candidate fields and keeps the source r
   assert.equal(result.candidates[0].id, UUID);
   assert.equal(result.candidates[0].release_group.title, "Fixture Group");
   assert.equal(result.raw.count, 1);
+});
+
+test("MusicBrainz release barcode/catno lookups use field queries and validate before fetch", async t => {
+  const oldMinInterval = MUSICBRAINZ_PACE.minIntervalMs;
+  const oldProviderMinInterval = paceConfig.minIntervalMs;
+  MUSICBRAINZ_PACE.minIntervalMs = 0;
+  paceConfig.minIntervalMs = 0;
+  t.after(() => {
+    MUSICBRAINZ_PACE.minIntervalMs = oldMinInterval;
+    paceConfig.minIntervalMs = oldProviderMinInterval;
+  });
+
+  const seen = [];
+  const fetchImpl = async input => {
+    const url = new URL(String(input));
+    seen.push(url.searchParams.get("query"));
+    return jsonResponse({ count: 1, releases: [{ id: UUID, title: "Fixture", "artist-credit": [] }] });
+  };
+  const byBarcode = await searchMusicBrainzReleaseByField("8804-775254 710", "barcode", { fetchImpl });
+  assert.equal(byBarcode.field, "barcode");
+  assert.equal(byBarcode.candidates[0].id, UUID);
+  const byCatno = await runAuthoritativeOp("musicbrainz.release.catno", "UPCJ-9085", { fetchImpl });
+  assert.equal(byCatno.field, "catno");
+  assert.deepEqual(seen, ["barcode:8804775254710", "catno:UPCJ-9085"]);
+
+  let called = false;
+  const guard = { fetchImpl: async () => { called = true; } };
+  await assert.rejects(searchMusicBrainzReleaseByField("ABC", "barcode", guard), error => error.kind === "bad_input");
+  await assert.rejects(searchMusicBrainzReleaseByField("12345", "barcode", guard), error => error.kind === "bad_input");
+  await assert.rejects(searchMusicBrainzReleaseByField("", "catno", guard), error => error.kind === "bad_input");
+  await assert.rejects(searchMusicBrainzReleaseByField("x", "asin", guard), error => error.kind === "bad_input");
+  assert.equal(called, false, "invalid field lookups are rejected before any request");
 });
 
 test("Bangumi and Wikidata validate identifiers and preserve shared HTTP error kinds safely", async () => {

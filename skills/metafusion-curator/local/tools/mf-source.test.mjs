@@ -65,7 +65,7 @@ test("no args, --help, and -h all show the same free help", async () => {
 test("all registered operations and source help expose a concrete format and copyable example", async () => {
   const operations = listSourceOperations();
   const help = await executeMfSource(["help"]);
-  assert.equal(operations.length, 44);
+  assert.equal(operations.length, 46);
   assert.deepEqual(help.operations.map(operation => operation.id), operations.map(operation => operation.id));
 
   for (const operation of operations) {

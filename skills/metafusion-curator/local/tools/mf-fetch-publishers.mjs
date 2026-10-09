@@ -190,18 +190,24 @@ export function pageTitle(html) {
 function firstLine(text, pattern) { return text.match(pattern)?.[1]?.trim() || null; }
 export function findReleaseDate(text) {
   const raw = firstLine(text, /発売日[^\d]{0,24}(\d{4}[年.\/\-]\d{1,2}[月.\/\-]\d{1,2}日?)/)
-    || firstLine(text, /発売日\s*[：:]?\s*(\d{4}[\/.\-]\d{1,2}[\/.\-]\d{1,2})/);
+    || firstLine(text, /発売日\s*[：:]?\s*(\d{4}[\/.\-]\d{1,2}[\/.\-]\d{1,2})/)
+    // Pony Canyon 等站点的“2010.9.3 発売”形状：日期在前、発売在后。
+    || firstLine(text, /(\d{4}[年.\/\-]\d{1,2}[月.\/\-]\d{1,2}日?)\s*発売/);
   if (!raw) return null;
   const digits = raw.replace(/[年月]/g, '-').replace(/日$/, '').split(/[-./]/).map((p) => p.padStart(2, '0'));
   return digits.length === 3 ? digits.join('-') : raw;
 }
 export function findPrice(text) {
+  const priceRe = /([¥￥][\s\d,]{2,12}(?:円)?(?:[ \t]*[（(][^）)]{1,10}[）)])?)|(\d{1,3}(?:[,\d]{1,9})\s*円(?:[ \t]*[（(][^）)]{1,10}[）)])?)/;
+  const pick = (pool) => {
+    const pm = pool.match(priceRe);
+    if (!pm) return null;
+    const v = (pm[1] || pm[2]).replace(/\s+/g, ' ').trim();
+    return v.length <= 40 ? v : v.slice(0, 40);
+  };
   const near = text.match(/(?:価格|販売価格|税込価格|本体価格)[ \t:：]*([^。\n]{0,32})/);
-  const pool = (near ? near[1] : null) ?? text;
-  const pm = pool.match(/([¥￥][\s\d,]{2,12}(?:円)?(?:[ \t]*[（(][^）)]{1,10}[）)])?)|(\d{1,3}(?:[,\d]{1,9})\s*円(?:[ \t]*[（(][^）)]{1,10}[）)])?)/);
-  if (!pm) return null;
-  const v = (pm[1] || pm[2]).replace(/\s+/g, ' ').trim();
-  return v.length <= 40 ? v : v.slice(0, 40);
+  // “価格”二字可能只出现在排序菜单/营销文案里：窗口无金额时回退全文首个金额。
+  return (near ? pick(near[1]) : null) ?? pick(text);
 }
 function trackMarkerPos(text) {
   const m = /(?:Track\s*list|トラックリスト)/i.exec(text);
@@ -381,6 +387,11 @@ export async function fetchSonyMusic(urlOrCode, opts = {}) {
   const faviconOnly = /\/(?:common\/assets\/images\/favicon|favicon)/i.test(og['og:image'] ?? '');
   const looksShell = genericTitle && (faviconOnly || !og['og:image']);
   if (looksShell) throw new PublisherError('notfound', publisher, '返回的是站内壳页/通用页（伪 200），未找到商品记录：' + finalUrl, { status, url, retryable: false });
+  // 不存在的品番会被回落到艺人 /discography/ 索引页：最终 URL 已不是详情路径，
+  // 此时不得用输入品番拼出假记录。
+  if (!/^\/artist\/[^/]+\/discography\/[^/]+\/?$/i.test(new URL(finalUrl).pathname)) {
+    throw new PublisherError('notfound', publisher, '最终 URL 已不是商品详情路径（疑似不存在的品番回落到索引页），未找到商品记录：' + finalUrl, { status, url: finalUrl, retryable: false, hint: '核对 artist-slug 与品番组合；结论仅限本次读取' });
+  }
   const parts = (og['og:title'] || title || '').split(/\s*[|｜]\s*/);
   const productTitle = parts[0]?.trim() ?? null;
   const artist = parts[1]?.trim() ?? null;
@@ -666,6 +677,8 @@ function editionBeforePrice(prefix, catalogCandidates) {
     normalizeEdition(value).endsWith(normalizeEdition(item.edition)));
   if (candidate) return candidate.edition;
   value = value.replace(/^[\s:：=＝・•]+|[\s:：=＝・•]+$/g, '').trim();
+  // 金额前的货币符号残留（如“￥7,000”分行形状的 ￥）不是版名。
+  if (/^[¥￥]$/.test(value)) return null;
   return value || null;
 }
 

@@ -1,4 +1,4 @@
-﻿// mf-fetch-authoritative.mjs - 权威数据库与官网一键搜索抓取工具
+// mf-fetch-authoritative.mjs - 权威数据库与官网一键搜索抓取工具
 // 支持 Wikidata Entity & Search API, Wikipedia API, Bangumi API, MusicBrainz API
 
 import { jsonRequest, ProviderError } from "./mf-fetch-providers.mjs";
@@ -265,10 +265,25 @@ export async function fetchMusicBrainzRecording(id, opts = {}) {
   return fetchMusicBrainzEntity("recording", id, opts);
 }
 
-export async function searchMusicBrainzRelease(query, opts = {}) {
-  const search = requireText(query, "MusicBrainz release 检索词");
+const MUSICBRAINZ_RELEASE_SEARCH_FIELDS = new Set(["release", "barcode", "catno"]);
+
+function requireMusicBrainzBarcode(value) {
+  const digits = String(value ?? "").replace(/[\s-]/g, "");
+  if (!/^\d{6,14}$/.test(digits)) {
+    throw new AuthoritativeError("bad_input", "musicbrainz", "MusicBrainz 条码必须是 6–14 位数字");
+  }
+  return digits;
+}
+
+export async function searchMusicBrainzReleaseByField(value, field, opts = {}) {
+  if (!MUSICBRAINZ_RELEASE_SEARCH_FIELDS.has(field)) {
+    throw new AuthoritativeError("bad_input", "musicbrainz", "MusicBrainz release 检索字段仅支持 release/barcode/catno");
+  }
+  const search = field === "barcode"
+    ? requireMusicBrainzBarcode(value)
+    : requireText(value, `MusicBrainz release ${field} 检索词`, 64);
   const url = new URL("https://musicbrainz.org/ws/2/release/");
-  url.searchParams.set("query", `release:${search}`);
+  url.searchParams.set("query", `${field}:${search}`);
   url.searchParams.set("fmt", "json");
   url.searchParams.set("limit", "10");
   let response;
@@ -290,7 +305,11 @@ export async function searchMusicBrainzRelease(query, opts = {}) {
     release_group: release["release-group"] ? { id: release["release-group"].id, title: release["release-group"].title } : null,
     raw: release,
   }));
-  return { source: "musicbrainz", query: search, total: Number.isFinite(payload.count) ? payload.count : candidates.length, candidates, raw: payload };
+  return { source: "musicbrainz", query: search, field, total: Number.isFinite(payload.count) ? payload.count : candidates.length, candidates, raw: payload };
+}
+
+export async function searchMusicBrainzRelease(query, opts = {}) {
+  return searchMusicBrainzReleaseByField(query, "release", opts);
 }
 
 /**
@@ -378,6 +397,66 @@ function firstMatch(text, pattern) {
   return text.match(pattern)?.[1]?.trim() || null;
 }
 
+function extractUmjCanonicalSegments(html) {
+  for (const match of String(html).matchAll(/<link\b[^>]*>/gi)) {
+    const tag = match[0];
+    if (!/\brel=["']canonical["']/i.test(tag)) continue;
+    const href = /\bhref=["']([^"']+)["']/i.exec(tag)?.[1];
+    if (!href) continue;
+    let url;
+    try { url = new URL(decodeHtml(href.trim())); }
+    catch { return null; }
+    const host = url.hostname.toLowerCase();
+    if (!(host === "universal-music.co.jp" || host.endsWith(".universal-music.co.jp"))) return null;
+    const segments = url.pathname.split("/").filter(Boolean);
+    if (segments.length >= 3 && segments[segments.length - 2].toLowerCase() === "products") {
+      return { slug: segments[segments.length - 3].toLowerCase(), code: segments[segments.length - 1] };
+    }
+    return null;
+  }
+  return null;
+}
+
+function extractUmjLdJsonIdentity(html) {
+  const codes = new Set();
+  const pageUrls = [];
+  for (const match of String(html).matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    let payload;
+    try { payload = JSON.parse(match[1]); }
+    catch { continue; }
+    const nodes = Array.isArray(payload) ? payload : [...(payload["@graph"] || []), payload];
+    for (const node of nodes) {
+      if (!node || typeof node !== "object") continue;
+      const type = String(node["@type"] || "");
+      if (type === "BreadcrumbList" && Array.isArray(node.itemListElement)) {
+        for (const item of node.itemListElement) {
+          const name = typeof item?.name === "string" ? decodeHtml(item.name).trim() : "";
+          if (name) codes.add(name.toUpperCase());
+        }
+      }
+      if (type === "WebPage") {
+        if (typeof node.url === "string") pageUrls.push(node.url);
+        const name = typeof node.name === "string" ? decodeHtml(node.name).trim() : "";
+        const prefix = name.match(/^([A-Z0-9]+(?:-[A-Z0-9]+)*)/i)?.[1];
+        if (prefix) codes.add(prefix.toUpperCase());
+      }
+    }
+  }
+  return { codes, pageUrls };
+}
+
+function umjLdPageUrlMatches(pageUrls, slug, wantedCode) {
+  return pageUrls.some(value => {
+    let segments;
+    try { segments = new URL(String(value)).pathname.split("/").filter(Boolean); }
+    catch { return false; }
+    return segments.length >= 3
+      && segments[segments.length - 3].toLowerCase() === slug
+      && segments[segments.length - 2].toLowerCase() === "products"
+      && segments[segments.length - 1].toUpperCase() === wantedCode;
+  });
+}
+
 function extractTracklistExcerpt(text) {
   const markers = ["曲目", "収録曲", "収録楽曲"];
   const positions = markers.map(marker => text.indexOf(marker)).filter(index => index >= 0);
@@ -430,9 +509,23 @@ export async function fetchUniversalMusicJapanProduct(artistSlug, productCode, o
   }
 
   const text = htmlToText(html);
+  const wantedCode = code.toUpperCase();
   const pageCatalogNumbers = [...text.matchAll(/品\s*番\s*([A-Z0-9]+(?:-[A-Z0-9]+)*)/gi)]
     .map(match => match[1].toUpperCase());
-  const catalogNumber = pageCatalogNumbers.find(value => value === code.toUpperCase()) || null;
+  let catalogNumber = pageCatalogNumbers.find(value => value === wantedCode) || null;
+  let catalogNumberStatus = "verified_exact";
+  if (!catalogNumber && pageCatalogNumbers.length === 0) {
+    // 数字发行页（如 UR1AS/UV1AS/UU1AS）商品表无「品番」行：要求 canonical 路径
+    // slug+品番与请求完全一致，且 ld+json 面包屑/WebPage 双重确认同一品番。
+    const canonical = extractUmjCanonicalSegments(html);
+    const ld = extractUmjLdJsonIdentity(html);
+    const canonicalMatches = canonical?.slug === slug && canonical.code.toUpperCase() === wantedCode;
+    const ldMatches = ld.codes.has(wantedCode) && umjLdPageUrlMatches(ld.pageUrls, slug, wantedCode);
+    if (canonicalMatches && ldMatches) {
+      catalogNumber = wantedCode;
+      catalogNumberStatus = "verified_canonical_ld";
+    }
+  }
   if (!catalogNumber) {
     throw new AuthoritativeError("identity_mismatch", "umj", "页面未找到与请求完全匹配的品番", { retryable: false });
   }
@@ -469,7 +562,7 @@ export async function fetchUniversalMusicJapanProduct(artistSlug, productCode, o
     tracklist_excerpt: tracklistExcerpt,
     image_urls: imageUrls,
     field_status: {
-      catalog_number: "verified_exact",
+      catalog_number: catalogNumberStatus,
       product_title: productTitle ? "page_title" : "missing",
       release_date: releaseDate ? "page_field" : "missing",
       format: format ? "page_field" : "missing",
@@ -488,10 +581,12 @@ export const AUTHORITATIVE_OPS = {
   "bangumi.search": { source: "bangumi", label: "Bangumi subject 搜索（实验性 POST）", authority: "社区编目来源", access: "anonymous", run: (arg, opts) => searchBangumiSubjects(arg, opts) },
   "musicbrainz.artist.search": { source: "musicbrainz", label: "MusicBrainz 艺人搜索", authority: "社区编目来源", access: "anonymous", run: (arg, opts) => searchMusicBrainzArtist(arg, opts) },
   "musicbrainz.release.search": { source: "musicbrainz", label: "MusicBrainz release 搜索", authority: "社区编目来源", access: "anonymous", run: (arg, opts) => searchMusicBrainzRelease(arg, opts) },
+  "musicbrainz.release.barcode": { source: "musicbrainz", label: "MusicBrainz release 条码反查", authority: "社区编目来源", access: "anonymous", run: (arg, opts) => searchMusicBrainzReleaseByField(arg, "barcode", opts) },
+  "musicbrainz.release.catno": { source: "musicbrainz", label: "MusicBrainz release 品番反查", authority: "社区编目来源", access: "anonymous", run: (arg, opts) => searchMusicBrainzReleaseByField(arg, "catno", opts) },
   "musicbrainz.release": { source: "musicbrainz", label: "MusicBrainz release 详情（合法 inc）", authority: "社区编目来源", access: "anonymous", run: (arg, opts) => fetchMusicBrainzRelease(arg, opts) },
   "musicbrainz.release-group": { source: "musicbrainz", label: "MusicBrainz release-group 详情（合法 inc）", authority: "社区编目来源", access: "anonymous", run: (arg, opts) => fetchMusicBrainzReleaseGroup(arg, opts) },
   "musicbrainz.recording": { source: "musicbrainz", label: "MusicBrainz recording 详情（合法 inc）", authority: "社区编目来源", access: "anonymous", run: (arg, opts) => fetchMusicBrainzRecording(arg, opts) },
-  "umj.product": { source: "umj", label: "Universal Music Japan 官方商品页（严格匹配可见品番）", authority: "版权方官方来源", access: "anonymous", run: (arg, opts) => {
+  "umj.product": { source: "umj", label: "Universal Music Japan 官方商品页（严格匹配品番：可见品番或 canonical+结构化数据双重确认）", authority: "版权方官方来源", access: "anonymous", run: (arg, opts) => {
     const parts = String(arg ?? "").split("/");
     if (parts.length !== 2 || !parts[0] || !parts[1]) throw new AuthoritativeError("bad_input", "umj", "用法：umj.product <artist-slug/product-code>");
     return fetchUniversalMusicJapanProduct(parts[0], parts[1], opts);

@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import {
   fetchUniversalMusic, fetchPonyCanyon, fetchCanime, fetchSonyMusic,
   fetchBushiroadMusic, fetchBangDream, runPublisherOp, DISPATCH, PUBLISHERS,
-  PublisherError, padCode, depadCode, splitCatalog, findReleaseDate,
+  PublisherError, padCode, depadCode, splitCatalog, findReleaseDate, findPrice,
 } from './mf-fetch-publishers.mjs';
 
 const fakeFetch = (routes) => async (url) => {
@@ -145,6 +145,17 @@ test('sonymusic: 伪 200 壳页 → notfound；裸品番 → bad_input', async (
   await assert.rejects(fetchSonyMusic('Nope/ZZZZ-9999', { fetchImpl: impl, delay: noSleep }), (e) => e instanceof PublisherError && e.kind === 'notfound' && e.retryable === false);
   await assert.rejects(fetchSonyMusic('SRCL-13100'), (e) => e.kind === 'bad_input');
 });
+test('sonymusic: 不存在的品番回落到索引页时报 notfound，不拼假记录', async () => {
+  // 2026-10-09 live 实测：lisa/ZZZZ-99999 落到 /artist/lisa/discography/ 索引页。
+  const indexPage = html('ディスコグラフィ | LiSA | ソニーミュージックオフィシャルサイト',
+    ['<meta property="og:title" content="ディスコグラフィ | LiSA | ソニーミュージックオフィシャルサイト">',
+     '<meta property="og:url" content="https://www.sonymusic.co.jp/artist/lisa/discography/">',
+     '<meta property="og:image" content="https://www.sonymusic.co.jp/adm_image/common/artist_image/73100000/73100441/artist_photo/71574.jpg">'],
+    '<div>索引页</div>');
+  const impl = fakeFetch({ 'discography': { html: indexPage, finalUrl: 'https://www.sonymusic.co.jp/artist/lisa/discography/' } });
+  await assert.rejects(fetchSonyMusic('lisa/ZZZZ-99999', { fetchImpl: impl, delay: noSleep }),
+    (e) => e instanceof PublisherError && e.kind === 'notfound' && e.retryable === false && /索引页/.test(e.message));
+});
 
 // ---- 错误分类与退避 ----
 test('错误分类：404→notfound / 403→blocked / 传输失败→network 且重试', async () => {
@@ -182,6 +193,18 @@ test('findReleaseDate 归一化', () => {
   assert.equal(findReleaseDate('発売日 2026年10月3日'), '2026-10-03');
   assert.equal(findReleaseDate('発売日：2026/1/9'), '2026-01-09');
   assert.equal(findReleaseDate('発売日未定'), null);
+  // 2026-10-09 pony_canyon live 实测形状：日期在前、“発売”在后。
+  assert.equal(findReleaseDate('DVD\n2010.9.3 発売\n本編収録時間'), '2010-09-03');
+  assert.equal(findReleaseDate('CD 2026/10/28 発売'), '2026-10-28');
+  assert.equal(findReleaseDate('2010.09.03'), null, '无“発売”锚点的裸日期不采纳');
+});
+test('findPrice: “価格”只出现在菜单/营销文案时回退全文首个金额', () => {
+  // 2026-10-09 canime live 实测：“価格が安い順”排序菜单在后、真价格在前。
+  assert.equal(findPrice('CD 2026/10/28 発売\n¥3,300 (税込)\nカートに追加\n価格が安い順\n価格が高い順'), '¥3,300 (税込)');
+  // pony_canyon live 实测：营销文案“キャンペーン価格で発売”先于定价出现。
+  assert.equal(findPrice('キャンペーン価格で発売!!\n2010.09.03\nDVD\n¥2,200(税込)'), '¥2,200(税込)');
+  assert.equal(findPrice('価格：¥3,300（税込）'), '¥3,300（税込）');
+  assert.equal(findPrice('発売日未定 特典なし'), null);
 });
 
 // ---- Bushiroad Music / BanG Dream 官方商品页 ----
@@ -673,6 +696,27 @@ test('同一版名出现多价或价格版名无法归版时保留候选并令 p
   assert.equal(unmatched.price_candidates.length, 1);
   assert.equal(unmatched.price_candidates[0].catalog_number, null);
   assert.match(unmatched.price_candidates[0].raw, /キャンペーン価格/);
+});
+
+test('金额紧贴的货币符号不算版名：单版单价允许回填', async () => {
+  // 2026-10-09 bang-dream.com/discographies/122/ live 实测形状：价格标签与金额分行，
+  // “￥7,000”的 ￥ 不得成为 edition，否则会阻断单版价格回填。
+  const body = [
+    '<h1>BanG Dream! Vol.7</h1>',
+    '<p>発売日</p><p>2017年11月22日</p>',
+    '<p>価格</p><p>￥7,000</p>',
+    '<p>品番</p><p>OVXN-0035</p>',
+    '<h2>収録内容</h2><p>#13,完全新作OVA</p>',
+  ].join('\n');
+  const fixture = html('BanG Dream! Vol.7｜ディスコグラフィ｜BanG Dream!（バンドリ！）公式サイト',
+    [`<meta property="og:url" content="${BANG_DREAM_URL}">`], body);
+  const result = await fetchBangDream(BANG_DREAM_URL, { fetchFn: fakeFetch({ '4218': { html: fixture } }), delay: noSleep });
+  assert.equal(result.catalog_number, 'OVXN-0035');
+  assert.equal(result.price, '￥7,000');
+  assert.deepEqual(result.price_candidates.map(({ edition, catalog_number, amount, currency }) => ({
+    edition, catalog_number, amount, currency,
+  })), [{ edition: null, catalog_number: 'OVXN-0035', amount: 7000, currency: 'JPY' }]);
+  assert.equal(result.field_status.price, 'source_reported_unverified');
 });
 
 test('单版页出现未匹配的明确版名时，不把唯一品番自动赋给该价格', async () => {
