@@ -721,6 +721,17 @@ export async function runWorkspace(
       tries: 1,
     });
     if (pushed.status === 200) return finalize(pushed.body);
+    // This specific 503 certifies rollback of this request. It cannot resolve
+    // an earlier lost response: another same-ID request may still be in flight.
+    if (!previouslyUnknown && pushed.status === 503 &&
+        pushed.body?.error === "transaction_busy" && pushed.body?.applied === false) {
+      state.pending.outcome = "rejected";
+      save(stateFile, state);
+      return {
+        ok: false, applied: false, reason: "push_busy_keep_same_commit",
+        commit_id: id, status: pushed.status, result: publicFailure(pushed),
+      };
+    }
     if (pushed.status === 0 || pushed.status >= 500) {
       const recovered = await requestFn(`${API}/commits/${id}`);
       if (recovered.status === 200) return finalize(recovered.body);

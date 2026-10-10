@@ -36,12 +36,15 @@ node mf-workspace.mjs create --dir ../../workspaces/agent-A --target relation --
 
 超过 100 个操作按能独立维持结构约束的批次拆分。一个来源任务可有多批次，但不能把多批次成功描述为一个原子事务。不同 Agent 尽量分派不同来源对象，热点同字段无法靠增加并发完成更多编辑。
 
+服务端已移除全目录结构锁，结构实体和关系提交以 `SERIALIZABLE` 并行执行；数据库明确回滚的事务会由服务端有界重试。同发行、同身份条件或同一行仍有局部协调，不必等待全站“低峰”。每个 Agent 在自己的工作区准备较小的完整批次再推送；并发数不是连接池大小，也不能据此承诺线上吞吐。
+
 ## 冲突与结果不明
 
 - `commit_conflict`：整批回滚，保留旧提交；checkout 冲突值并核证据。`rebase` 默认只合并互不冲突的路径，同字段需要 resolution 文件明确 `ours` 或 `theirs`。
 - `identity_candidates_changed`：查询返回的候选详情与来源，复用相同实体或审查不同身份。`--reviews` 文件按创建 ref 提供新的 canonical ID 数组，不能机械复制所有候选当作已经审查。
 - `definitions_conflict`：重新核当前动态约束，rebase 生成新基线与提交。
-- 网络/5xx：结果不明。`receipt` 查询持久回执，404 可能仍在执行；保留同提交再次显式 push，服务端按同 ID/载荷重放。工具不自动重试写请求，不允许未知提交 rebase。
+- `503 transaction_busy` 且 `applied=false`：本次请求已回滚。遵守 Retry-After，保留提交，稍后显式 push 同 ID、同载荷；不等待数分钟或增加 Agent。此前同 ID 推送若结果未知，此响应不能清除旧的不确定性，仍先查回执。
+- 网络/其他5xx：结果不明。`receipt` 查询持久回执，404 可能仍在执行；保留同提交再次显式 push，服务端按同 ID/载荷重放。工具不自动重试写请求，不允许未知提交 rebase。
 - 429：尊重 Retry-After；降低本工作区请求频率，不开更多 Agent 绕过账号预算。原提交与证据保留。
 - 推送已成功但刷新失败：回执落在 `.mf/receipts/`，保留 pending，再运行 receipt 完成刷新；工作文件的额外改动会被保留并明确报告，不能假装 checkout 已完成。
 

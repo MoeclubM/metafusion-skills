@@ -315,6 +315,31 @@ test("explicit conflict rebases with new ID, keeping old immutable commit", asyn
     2,
   );
 });
+test("known transaction busy preserves commit and permits explicit same-ID push", async (t) => {
+  const f = fixture(t), sealed = await f.seal();
+  const busy = async (p, o) => p.endsWith("/commits")
+    ? { status: 503, body: { error: "transaction_busy", applied: false } } : f.fn(p, o);
+  const result = await runWorkspace("push", { ...f.opts, requestFn: busy, apply: true });
+  assert.equal(result.applied, false);
+  assert.equal(result.reason, "push_busy_keep_same_commit");
+  assert.equal(f.read(".mf/state.json").pending.id, sealed.commit_id);
+  assert.equal(f.read(".mf/state.json").pending.outcome, "rejected");
+  const retry = await runWorkspace("push", { ...f.opts, apply: true });
+  assert.equal(retry.ok, true);
+  assert.equal(retry.receipt.id, sealed.commit_id);
+});
+test("a busy response cannot clear uncertainty from a previous push", async (t) => {
+  const f = fixture(t), sealed = await f.seal();
+  const failed = async (p, o) => p.endsWith("/commits") ? { status: 0, body: {} } : f.fn(p,o);
+  await runWorkspace("push", { ...f.opts, requestFn: failed, apply: true });
+  const busy = async (p, o) => p.endsWith("/commits")
+    ? { status: 503, body: { error: "transaction_busy", applied: false } } : f.fn(p, o);
+  const result = await runWorkspace("push", { ...f.opts, requestFn: busy, apply: true });
+  assert.equal(result.applied, null);
+  assert.equal(f.read(".mf/state.json").pending.id, sealed.commit_id);
+  assert.equal(f.read(".mf/state.json").pending.outcome, "unknown");
+  await assert.rejects(runWorkspace("rebase", f.opts), /unknown_push_requires_receipt_same_id/);
+});
 test("dirty checkout, origin mismatch, tampered commit, stale local lock refuse", async (t) => {
   const f = fixture(t),
     local = await f.seal();
