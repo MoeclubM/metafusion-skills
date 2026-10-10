@@ -12,19 +12,25 @@
 //   · **同键异值的外部标识 = 两侧指向不同真实对象**，合并前一律拒绝。
 //   · 403/429 不等于失效；404 只表明当前调用者不可见或目标不存在。
 
-import {
-  request,
-  listAll,
-  putEntity as apiPutEntity,
-} from "../metafusion-api.mjs";
+import { request, listAll } from "../metafusion-api.mjs";
 
-export { apiPutEntity as putEntity };
+import { randomUUID } from "node:crypto";
+import { diffDocument } from "./mf-workspace.mjs";
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** 统一调用：直接透传技能客户端的 request，便于脚本处理非 2xx。 */
 export const call = (pathname, opts = {}) => request(pathname, opts);
 
-export const KINDS = ["agent", "collection", "work", "content_unit", "expression", "release", "medium", "track"];
+export const KINDS = [
+  "agent",
+  "collection",
+  "work",
+  "content_unit",
+  "expression",
+  "release",
+  "medium",
+  "track",
+];
 
 /** 来源/证据构造（与 reference-source-policy.md 一致）。 */
 export const src = (url, citation) => ({ kind: "url", url, citation });
@@ -35,7 +41,9 @@ export async function getEntity(id) {
   const r = await request(`/api/catalog/entities/${encodeURIComponent(id)}`);
   if (r.status === 200) return r.body;
   if (r.status === 404) return null;
-  throw new Error(`读取实体 ${id} 失败：HTTP ${r.status} ${r.body?.error ?? ""}`.trim());
+  throw new Error(
+    `读取实体 ${id} 失败：HTTP ${r.status} ${r.body?.error ?? ""}`.trim(),
+  );
 }
 
 /** 分页读取某 kind 的全部可见实体（失败即抛错，绝不静默截断）。 */
@@ -45,8 +53,11 @@ export async function listKind(kind, params = {}) {
 
 /** 某实体的关系边；失败即抛错。 */
 export async function relationsOf(id) {
-  const r = await request(`/api/catalog/entities/${encodeURIComponent(id)}/relations`);
-  if (r.status !== 200) throw new Error(`读取关系 ${id} 失败：HTTP ${r.status}`);
+  const r = await request(
+    `/api/catalog/entities/${encodeURIComponent(id)}/relations`,
+  );
+  if (r.status !== 200)
+    throw new Error(`读取关系 ${id} 失败：HTTP ${r.status}`);
   return r.body?.items ?? [];
 }
 
@@ -68,12 +79,33 @@ export async function getEntityRetry(id, tries = 4) {
 
 /** 参与"身份"判定、同键异值即视为不同对象的字段码。 */
 export const IDENTITY_KEYS = [
-  "bangumi", "musicbrainz", "wikidata", "anilist", "myanimelist", "imdb", "imdb_person",
-  "isbndb", "isrc", "steam", "vgmdb", "vndb", "discogs", "tmdb", "apple_music",
+  "bangumi",
+  "musicbrainz",
+  "wikidata",
+  "anilist",
+  "myanimelist",
+  "imdb",
+  "imdb_person",
+  "isbndb",
+  "isrc",
+  "steam",
+  "vgmdb",
+  "vndb",
+  "discogs",
+  "tmdb",
+  "apple_music",
 ];
 
 /** 参与"身份"判定的属性码：这些值不同即不是同一版次/同一物。 */
-export const IDENTITY_ATTRS = ["duration", "edition_date", "barcode", "isbn", "catalog_number", "edition_type", "version_label"];
+export const IDENTITY_ATTRS = [
+  "duration",
+  "edition_date",
+  "barcode",
+  "isbn",
+  "catalog_number",
+  "edition_type",
+  "version_label",
+];
 
 /**
  * expression 的 version_label 是"录音版本"身份字段（2026-10-03 merge-safe-apply 实证：
@@ -89,8 +121,16 @@ export function expressionVersionLabelConflict(keep, lose) {
   return j(a) === j(b) ? null : "attributes.version_label";
 }
 
-const canonical = (v) => Array.isArray(v) ? v.map(canonical)
-  : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical(v[k])])) : v;
+const canonical = (v) =>
+  Array.isArray(v)
+    ? v.map(canonical)
+    : v && typeof v === "object"
+      ? Object.fromEntries(
+          Object.keys(v)
+            .sort()
+            .map((k) => [k, canonical(v[k])]),
+        )
+      : v;
 const j = (v) => JSON.stringify(canonical(v ?? null));
 
 /**
@@ -103,14 +143,18 @@ export function identityConflicts(keep, lose) {
   for (const k of IDENTITY_KEYS) {
     const a = keep.external_ids?.[k];
     const b = lose.external_ids?.[k];
-    if (a != null && b != null && String(a) !== String(b)) out.push(`external_ids.${k}`);
+    if (a != null && b != null && String(a) !== String(b))
+      out.push(`external_ids.${k}`);
   }
   for (const k of IDENTITY_ATTRS) {
     const a = keep.attributes?.[k];
     const b = lose.attributes?.[k];
     if (a != null && b != null && j(a) !== j(b)) out.push(`attributes.${k}`);
   }
-  if (String(keep.kind || "").toLowerCase() === "expression" || String(lose.kind || "").toLowerCase() === "expression") {
+  if (
+    String(keep.kind || "").toLowerCase() === "expression" ||
+    String(lose.kind || "").toLowerCase() === "expression"
+  ) {
     const c = expressionVersionLabelConflict(keep, lose);
     if (c && !out.includes(c)) out.push(c);
   }
@@ -130,37 +174,61 @@ export function unionInto(keep, lose, { kind } = {}) {
   const pics = [...(keep.pictures ?? [])];
   const seenPic = new Set(pics.map((p) => p?.url).filter(Boolean));
   for (const p of lose.pictures ?? []) {
-    if (p?.url && !seenPic.has(p.url)) { pics.push(p); seenPic.add(p.url); }
-    else if (p?.url && j(pics.find((x) => x.url === p.url)) !== j(p)) conflicts.push(`pictures.${p.url}`);
+    if (p?.url && !seenPic.has(p.url)) {
+      pics.push(p);
+      seenPic.add(p.url);
+    } else if (p?.url && j(pics.find((x) => x.url === p.url)) !== j(p))
+      conflicts.push(`pictures.${p.url}`);
   }
-  if (pics.length !== (keep.pictures ?? []).length) changes.push(`pictures+${pics.length - (keep.pictures ?? []).length}`);
+  if (pics.length !== (keep.pictures ?? []).length)
+    changes.push(`pictures+${pics.length - (keep.pictures ?? []).length}`);
 
   const tr = JSON.parse(JSON.stringify(keep.translations ?? {}));
   for (const [loc, val] of Object.entries(lose.translations ?? {})) {
-    if (!tr[loc]) { tr[loc] = val; continue; }
+    if (!tr[loc]) {
+      tr[loc] = val;
+      continue;
+    }
     for (const [k, v] of Object.entries(val ?? {})) {
       if (!(k in tr[loc])) tr[loc][k] = v;
-      else if (j(tr[loc][k]) !== j(v)) conflicts.push(`translations.${loc}.${k}`);
+      else if (j(tr[loc][k]) !== j(v))
+        conflicts.push(`translations.${loc}.${k}`);
     }
   }
-  const trTouched = Object.keys(tr).filter((l) => j(tr[l]) !== j(keep.translations?.[l]));
+  const trTouched = Object.keys(tr).filter(
+    (l) => j(tr[l]) !== j(keep.translations?.[l]),
+  );
   if (trTouched.length) changes.push(`translations~${trTouched.join("/")}`);
 
   const attrs = JSON.parse(JSON.stringify(keep.attributes ?? {}));
   for (const [k, v] of Object.entries(lose.attributes ?? {})) {
-    if (!(k in attrs)) { attrs[k] = v; continue; }
+    if (!(k in attrs)) {
+      attrs[k] = v;
+      continue;
+    }
     if (Array.isArray(attrs[k]) && Array.isArray(v)) {
-      for (const x of v) if (!attrs[k].some((y) => j(y) === j(x))) attrs[k].push(x);
-    } else if (attrs[k] && v && typeof attrs[k] === "object" && typeof v === "object" && !Array.isArray(attrs[k]) && !Array.isArray(v)) {
+      for (const x of v)
+        if (!attrs[k].some((y) => j(y) === j(x))) attrs[k].push(x);
+    } else if (
+      attrs[k] &&
+      v &&
+      typeof attrs[k] === "object" &&
+      typeof v === "object" &&
+      !Array.isArray(attrs[k]) &&
+      !Array.isArray(v)
+    ) {
       for (const [kk, vv] of Object.entries(v)) {
         if (!(kk in attrs[k])) attrs[k][kk] = vv;
-        else if (j(attrs[k][kk]) !== j(vv)) conflicts.push(`attributes.${k}.${kk}`);
+        else if (j(attrs[k][kk]) !== j(vv))
+          conflicts.push(`attributes.${k}.${kk}`);
       }
     } else if (j(attrs[k]) !== j(v)) {
       conflicts.push(`attributes.${k}`);
     }
   }
-  const attrTouched = Object.keys(attrs).filter((k) => j(attrs[k]) !== j(keep.attributes?.[k]));
+  const attrTouched = Object.keys(attrs).filter(
+    (k) => j(attrs[k]) !== j(keep.attributes?.[k]),
+  );
   if (attrTouched.length) changes.push(`attributes~${attrTouched.join("/")}`);
 
   const ext = { ...(keep.external_ids ?? {}) };
@@ -168,21 +236,28 @@ export function unionInto(keep, lose, { kind } = {}) {
     if (!(k in ext)) ext[k] = v;
     else if (String(ext[k]) !== String(v)) conflicts.push(`external_ids.${k}`);
   }
-  const extAdded = Object.keys(ext).filter((k) => !(k in (keep.external_ids ?? {})));
+  const extAdded = Object.keys(ext).filter(
+    (k) => !(k in (keep.external_ids ?? {})),
+  );
   if (extAdded.length) changes.push(`external_ids+${extAdded.join("/")}`);
 
   let contents = keep.contents;
   if (kind === "track") {
     contents = [...(keep.contents ?? [])];
     for (const c of lose.contents ?? []) {
-      const existing = contents.find((x) => x.expression_id === c.expression_id && j(x.locator) === j(c.locator));
+      const existing = contents.find(
+        (x) =>
+          x.expression_id === c.expression_id && j(x.locator) === j(c.locator),
+      );
       if (existing) {
-        if (j(existing.attributes) !== j(c.attributes)) conflicts.push(`contents.${c.expression_id}.attributes`);
+        if (j(existing.attributes) !== j(c.attributes))
+          conflicts.push(`contents.${c.expression_id}.attributes`);
         continue;
       }
       const added = structuredClone(c);
       if (contents.some((x) => x.position === added.position)) {
-        added.position = Math.max(0, ...contents.map((x) => Number(x.position) || 0)) + 1;
+        added.position =
+          Math.max(0, ...contents.map((x) => Number(x.position) || 0)) + 1;
       }
       contents.push(added);
     }
@@ -190,7 +265,13 @@ export function unionInto(keep, lose, { kind } = {}) {
   }
 
   return {
-    entity: { translations: tr, attributes: attrs, external_ids: ext, pictures: pics, ...(kind === "track" ? { contents } : {}) },
+    entity: {
+      translations: tr,
+      attributes: attrs,
+      external_ids: ext,
+      pictures: pics,
+      ...(kind === "track" ? { contents } : {}),
+    },
     changes,
     conflicts,
   };
@@ -202,87 +283,238 @@ export function unionInto(keep, lose, { kind } = {}) {
  * sources 必须由调用者核验，覆盖两端身份、保留字段与图片使用权；self 不足以支撑合并事实。
  */
 export async function mergeEntity({
-  kind, keep, lose, scopeNote, dryRun = true,
-  relationType = "same-scope duplicate", sources = [],
+  kind,
+  keep,
+  lose,
+  scopeNote,
+  dryRun = true,
+  relationType = "same-scope duplicate",
+  sources = [],
 }) {
-  let changes = [], conflicts = [], edgeDeletes = 0;
+  let changes = [],
+    conflicts = [],
+    edgeDeletes = 0;
   const completedSteps = [];
   const result = (ok, reason, extra = {}) => ({
-    ok, reason, changes, conflicts, edgeDeletes, atomic: false,
-    partial: !ok && completedSteps.length > 0, completedSteps: [...completedSteps], ...extra,
+    ok,
+    reason,
+    changes,
+    conflicts,
+    edgeDeletes,
+    atomic: false,
+    partial: !ok && completedSteps.length > 0,
+    completedSteps: [...completedSteps],
+    ...extra,
   });
-  const evidenceValid = Array.isArray(sources) && sources.length > 0 && sources.every((s) => {
-    if (!["url", "publication"].includes(s?.kind) || !String(s.citation || "").trim()) return false;
-    if (s.kind === "publication") return true;
-    try { const url = new URL(s.url); return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password; }
-    catch { return false; }
-  });
-  if (!dryRun && !evidenceValid) return result(false, "evidence_required: 提供已核验的真实 url/publication 来源，不能使用 self");
-  if (!keep?.id || !lose?.id || keep.id === lose.id) return result(false, "invalid_merge_pair");
+  const evidenceValid =
+    Array.isArray(sources) &&
+    sources.length > 0 &&
+    sources.every((s) => {
+      if (
+        !["url", "publication"].includes(s?.kind) ||
+        !String(s.citation || "").trim()
+      )
+        return false;
+      if (s.kind === "publication") return true;
+      try {
+        const url = new URL(s.url);
+        return (
+          ["https:", "http:"].includes(url.protocol) &&
+          !url.username &&
+          !url.password
+        );
+      } catch {
+        return false;
+      }
+    });
+  if (!dryRun && !evidenceValid)
+    return result(
+      false,
+      "evidence_required: 提供已核验的真实 url/publication 来源，不能使用 self",
+    );
+  if (!keep?.id || !lose?.id || keep.id === lose.id)
+    return result(false, "invalid_merge_pair");
 
   // 两端版本和关系都在任何写入前检查，防止把过时并集覆盖到刚读取的新版本上。
-  const [currentKeep, currentLose] = await Promise.all([getEntity(keep.id), getEntity(lose.id)]);
-  if (!currentKeep || !currentLose) return result(false, "实体对当前调用者不可见或不存在");
+  const [currentKeep, currentLose] = await Promise.all([
+    getEntity(keep.id),
+    getEntity(lose.id),
+  ]);
+  if (!currentKeep || !currentLose)
+    return result(false, "实体对当前调用者不可见或不存在");
   if (currentLose.status === "merged") return result(true, "already-merged");
-  if (currentKeep.version !== keep.version || currentLose.version !== lose.version) return result(false, "version_conflict: 预检版本已改变，回读后重新审查");
-  if (kind !== currentKeep.kind || kind !== currentLose.kind || currentKeep.status !== "published"
-    || ["deleted", "merged"].includes(currentLose.status)) return result(false, "invalid_kind_or_status");
-  if (currentKeep.title !== currentLose.title || scopeKey(kind, currentKeep) !== scopeKey(kind, currentLose)) return result(false, "identity_or_scope_mismatch");
+  if (
+    currentKeep.version !== keep.version ||
+    currentLose.version !== lose.version
+  )
+    return result(false, "version_conflict: 预检版本已改变，回读后重新审查");
+  if (
+    kind !== currentKeep.kind ||
+    kind !== currentLose.kind ||
+    currentKeep.status !== "published" ||
+    ["deleted", "merged"].includes(currentLose.status)
+  )
+    return result(false, "invalid_kind_or_status");
+  if (
+    currentKeep.title !== currentLose.title ||
+    scopeKey(kind, currentKeep) !== scopeKey(kind, currentLose)
+  )
+    return result(false, "identity_or_scope_mismatch");
   conflicts = identityConflicts(currentKeep, currentLose);
   for (const key of ["number", "position"]) {
-    if (["content_unit", "medium", "track"].includes(kind) && j(currentKeep[key]) !== j(currentLose[key])) conflicts.push(key);
+    if (
+      ["content_unit", "medium", "track"].includes(kind) &&
+      j(currentKeep[key]) !== j(currentLose[key])
+    )
+      conflicts.push(key);
   }
   if (conflicts.length) return result(false, "identity_conflict");
   const union = unionInto(currentKeep, currentLose, { kind });
   changes = union.changes;
   conflicts = union.conflicts;
-  if (conflicts.length) return result(false, "field_conflict: 不自动丢弃对侧不同值");
-  const [keepRels, loseRels] = await Promise.all([relationsOf(keep.id), relationsOf(lose.id)]);
-  const key = (r, selfId) => `${r.source_id === selfId ? "out" : "in"}|${r.type}|${r.source_id === selfId ? r.target_id : r.source_id}|${j(r.attributes)}`;
+  if (conflicts.length)
+    return result(false, "field_conflict: 不自动丢弃对侧不同值");
+  const [keepRels, loseRels] = await Promise.all([
+    relationsOf(keep.id),
+    relationsOf(lose.id),
+  ]);
+  const key = (r, selfId) =>
+    `${r.source_id === selfId ? "out" : "in"}|${r.type}|${r.source_id === selfId ? r.target_id : r.source_id}|${j(r.attributes)}`;
   const keepSet = new Set(keepRels.map((r) => key(r, keep.id)));
   const duplicateEdges = loseRels.filter((r) => keepSet.has(key(r, lose.id)));
-  if (loseRels.some((r) => (r.source_id === lose.id ? keep.id : r.source_id) === (r.target_id === lose.id ? keep.id : r.target_id))) {
+  if (
+    loseRels.some(
+      (r) =>
+        (r.source_id === lose.id ? keep.id : r.source_id) ===
+        (r.target_id === lose.id ? keep.id : r.target_id),
+    )
+  ) {
     return result(false, "merge_would_create_self_loop");
   }
-  if (duplicateEdges.some((r) => !r.id || !Number.isInteger(r.version))) return result(false, "invalid_relation_version");
-  const baseNote = `合并重复（${relationType}）：同 kind、同作用域（${scopeNote}）、题名逐字相同`
-    + (changes.length ? `；并入已核验的对侧独有值（${changes.join("；")}）` : "")
-    + "；多步非原子操作";
-  if (dryRun) return result(true, "dry-run", { applicable: evidenceValid, plannedEdgeDeletes: duplicateEdges.length,
-    evidenceRequired: !evidenceValid, entity: { ...(await writable(currentKeep)), ...union.entity } });
+  if (duplicateEdges.some((r) => !r.id || !Number.isInteger(r.version)))
+    return result(false, "invalid_relation_version");
+  const baseNote =
+    `合并重复（${relationType}）：同 kind、同作用域（${scopeNote}）、题名逐字相同` +
+    (changes.length
+      ? `；并入已核验的对侧独有值（${changes.join("；")}）`
+      : "") +
+    "；多步非原子操作";
+  if (dryRun)
+    return result(true, "dry-run", {
+      applicable: evidenceValid,
+      plannedEdgeDeletes: duplicateEdges.length,
+      evidenceRequired: !evidenceValid,
+      entity: { ...(await writable(currentKeep)), ...union.entity },
+    });
 
   try {
     if (changes.length) {
-      const w = await request(`/api/catalog/entities/${encodeURIComponent(keep.id)}`, {
-        method: "PUT", body: { entity: { ...(await writable(currentKeep)), ...union.entity },
-          expected_version: currentKeep.version, edit_note: baseNote, sources },
+      const defs = await request("/api/catalog/definitions");
+      if (defs.status !== 200 || !defs.body?.etag)
+        return result(false, "definitions_unavailable");
+      const commit = {
+        id: randomUUID(),
+        definitions_etag: defs.body.etag,
+        edit_note: baseNote,
+        sources,
+        operations: [
+          {
+            target: "entity",
+            action: "update",
+            id: keep.id,
+            base_version: currentKeep.version,
+            patch: diffDocument(
+              currentKeep,
+              { ...currentKeep, ...union.entity },
+              "entity",
+            ),
+          },
+        ],
+      };
+      const w = await request("/api/catalog/commits", {
+        method: "POST",
+        body: commit,
+        tries: 1,
       });
-      if (w.status < 200 || w.status >= 300) return result(false, `并集 PUT HTTP ${w.status} ${w.body?.error ?? ""}`.trim());
+      if (w.status === 0 || w.status >= 500)
+        return result(false, "commit_push_unknown", {
+          commit_id: commit.id,
+          applied: null,
+        });
+      if (
+        w.status === 200 &&
+        (w.body?.applied !== true ||
+          w.body.id !== commit.id ||
+          w.body.items?.length !== 1)
+      )
+        return result(false, "commit_receipt_invalid", {
+          commit_id: commit.id,
+          applied: null,
+        });
+      if (w.status < 200 || w.status >= 300)
+        return result(
+          false,
+          `并集 commit HTTP ${w.status} ${w.body?.error ?? ""}`.trim(),
+        );
       completedSteps.push("keep_union");
       const readback = await getEntity(keep.id);
-      if (!readback || readback.version !== w.body?.version || Object.entries(union.entity).some(([k, v]) => j(readback[k]) !== j(v))) {
+      if (
+        !readback ||
+        readback.version !== w.body?.items?.[0]?.version ||
+        Object.entries(union.entity).some(([k, v]) => j(readback[k]) !== j(v))
+      ) {
         return result(false, "readback_mismatch: 并集写后未核验，停止");
       }
     }
     for (const r of duplicateEdges) {
-      const d = await request(`/api/catalog/relations/${encodeURIComponent(r.id)}`, {
-        method: "DELETE", body: { expected_version: r.version,
-          edit_note: "合并前置：删除与保留方同方向、同类型、同属性的冗余关系边；多步非原子操作", sources },
-      });
-      if (d.status < 200 || d.status >= 300) return result(false, `删冗余边失败 HTTP ${d.status}；停止后续合并`);
+      const d = await request(
+        `/api/catalog/relations/${encodeURIComponent(r.id)}`,
+        {
+          method: "DELETE",
+          body: {
+            expected_version: r.version,
+            edit_note:
+              "合并前置：删除与保留方同方向、同类型、同属性的冗余关系边；多步非原子操作",
+            sources,
+          },
+        },
+      );
+      if (d.status < 200 || d.status >= 300)
+        return result(false, `删冗余边失败 HTTP ${d.status}；停止后续合并`);
       edgeDeletes += 1;
       completedSteps.push(`delete_relation:${r.id}`);
     }
     const current = await getEntity(lose.id);
-    if (!current || current.version !== currentLose.version || current.status === "merged") return result(false, "version_conflict: 合并前对象已改变；停止");
-    const m = await request(`/api/catalog/entities/${encodeURIComponent(lose.id)}/lifecycle`, {
-      method: "POST", body: { expected_version: current.version, target_id: keep.id, edit_note: baseNote, sources },
-    });
-    if (m.status !== 200) return result(false, `合并 HTTP ${m.status} ${m.body?.error ?? ""}`.trim());
+    if (
+      !current ||
+      current.version !== currentLose.version ||
+      current.status === "merged"
+    )
+      return result(false, "version_conflict: 合并前对象已改变；停止");
+    const m = await request(
+      `/api/catalog/entities/${encodeURIComponent(lose.id)}/lifecycle`,
+      {
+        method: "POST",
+        body: {
+          expected_version: current.version,
+          target_id: keep.id,
+          edit_note: baseNote,
+          sources,
+        },
+      },
+    );
+    if (m.status !== 200)
+      return result(
+        false,
+        `合并 HTTP ${m.status} ${m.body?.error ?? ""}`.trim(),
+      );
     completedSteps.push("lifecycle");
     return result(true, "merged");
   } catch (error) {
-    return result(false, `合并步骤读取或回读失败：${String(error)}；停止后续写入`);
+    return result(
+      false,
+      `合并步骤读取或回读失败：${String(error)}；停止后续写入`,
+    );
   }
 }
 
@@ -294,23 +526,32 @@ async function writable(entity) {
 
 /** 从重复组里挑保留方：published 优先，其次字段更全。 */
 export function pickKeeper(entities) {
-  const score = (e) => (e.status === "published" ? 1000 : 0)
-    + Object.keys(e.translations ?? {}).length * 5
-    + Object.keys(e.attributes ?? {}).length * 3
-    + (e.pictures ?? []).length * 2
-    + (e.contents ?? []).length * 2
-    + (e.version ?? 0);
+  const score = (e) =>
+    (e.status === "published" ? 1000 : 0) +
+    Object.keys(e.translations ?? {}).length * 5 +
+    Object.keys(e.attributes ?? {}).length * 3 +
+    (e.pictures ?? []).length * 2 +
+    (e.contents ?? []).length * 2 +
+    (e.version ?? 0);
   return [...entities].sort((a, b) => score(b) - score(a))[0];
 }
 
 /** 作用域键：合并要求两侧同归属。 */
 export function scopeKey(kind, e) {
   switch (kind) {
-    case "content_unit": return `${e.work_id}|${e.parent_id ?? ""}`;
-    case "expression": return `${e.work_id}|${e.content_unit_id ?? ""}`;
-    case "release": return j((e.subjects ?? []).map((s) => [s.work_id, s.role, s.attributes]).sort());
-    case "medium": return `${e.release_id ?? ""}|${e.parent_id ?? ""}`;
-    case "track": return `${e.medium_id ?? ""}|${e.parent_id ?? ""}`;
-    default: return "";
+    case "content_unit":
+      return `${e.work_id}|${e.parent_id ?? ""}`;
+    case "expression":
+      return `${e.work_id}|${e.content_unit_id ?? ""}`;
+    case "release":
+      return j(
+        (e.subjects ?? []).map((s) => [s.work_id, s.role, s.attributes]).sort(),
+      );
+    case "medium":
+      return `${e.release_id ?? ""}|${e.parent_id ?? ""}`;
+    case "track":
+      return `${e.medium_id ?? ""}|${e.parent_id ?? ""}`;
+    default:
+      return "";
   }
 }

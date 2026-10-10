@@ -7,15 +7,17 @@ description: MetaFusion 实体编目、查重、关系维护与数据质检。�
 
 ## 入口
 
-在 `local/tools/` 使用 `mf-source` 检索来源、`mf-platform` 读写目录、`mf-definitions` upsert 词项或受控新增单个字段。参数查工具帮助；[工具索引](local/tools/README.md)，[凭据配置](local/README.md)。
+在 `local/tools/` 使用 `mf-source` 检索来源、`mf-platform` 只读目录、`mf-workspace` 管理本地副本与 commit/push、`mf-definitions` upsert 词项或受控新增单个字段。参数查工具帮助；[工具索引](local/tools/README.md)，[凭据配置](local/README.md)。
 
 ## 规则
 
 - 开始实例操作时核 OpenAPI 与 definitions；字段、关系、词项使用当前启用定义。
 - 查重核 kind、内容身份、父级作用域与 canonical ID；同名或同 Work 不证明同一 Expression。正式题名不机械清洗。
 - Release `subjects` 声明 Work，Track `contents` 引用 Expression；先声明 subjects，再补收录。
-- 写入需任务授权，先预览；保留未改字段，带当前版本，写后回读。Track 禁止整实体 PUT，收录与状态使用实例支持的专用端点；冲突或结果不明不重放。
-- Track 题名、属性与图片当前缺专用编辑入口；报告缺口，不能借状态或收录接口改写，也不能回退 PUT。
+- 编辑使用独立工作区：checkout → 本地修改 → commit → preview → push → 回执与展示核验。普通实体/关系编辑只走变更集，不调用旧整实体 PUT 工具；[提交与恢复](reference-workflow.md)。
+- 创建先核可见 canonical 候选，保存 reviewed_candidate_ids；有候选只在来源证明不同身份后列为已审查。服务端按题名、各语言题名、外部 ID 和结构作用域复核，集合变化需重新审查。
+- 不同字段自动合并；同字段冲突须明确取舍再 rebase。未知推送保留同 ID、同载荷，先查回执；不能换 ID、重建计划、睡眠等全库稳定或盲目重试旧写接口。
+- Track 元数据和状态用提交 patch，服务端保留完整收录。涉及隐藏收录时使用专用 contents 工具；删除、身份合并、下架、定义和文件操作按各自权限与事务维护。
 
 ## 按需参考
 
@@ -23,6 +25,7 @@ description: MetaFusion 实体编目、查重、关系维护与数据质检。�
 | --- | --- |
 | 层级、复用、命名 | [数据模型](reference-data-model.md)、[命名规范](../lrm-catalog-standards/SKILL.md) |
 | 来源、当前证据、封面 | [来源策略](reference-source-policy.md) |
+| 多 Agent、本地副本、批量推送或冲突 | [提交与恢复](reference-workflow.md) |
 | 自定义请求或接口失败 | [载荷](reference-api-templates.md)、[API 行为](reference-api-behavior.md)、[错误码](reference-api-errors.md) |
 | 权限与服务归属 | [接口范围](reference-endpoint-scope.md) |
 | 字段、关系或定义缺口 | [字段](reference-types-and-fields.md)、[关系](reference-relations.md)、[扩展定义](reference-model-gaps.md) |

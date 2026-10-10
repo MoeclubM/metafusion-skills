@@ -5,7 +5,6 @@ import {
   collectPages,
   listAll,
   normalizePageLimit,
-  putEntity,
   request,
   writableEntity,
 } from "./metafusion-api.mjs";
@@ -64,13 +63,22 @@ test("collectPages 推进真实 offset 并核对完整分页", async () => {
     limit: 2,
     requestFn: async (pathname) => {
       const url = new URL(pathname, "https://local.invalid");
-      calls.push({ offset: Number(url.searchParams.get("offset")), limit: Number(url.searchParams.get("limit")) });
+      calls.push({
+        offset: Number(url.searchParams.get("offset")),
+        limit: Number(url.searchParams.get("limit")),
+      });
       return pages.get(Number(url.searchParams.get("offset")));
     },
   });
 
-  assert.deepEqual(calls, [{ offset: 0, limit: 2 }, { offset: 2, limit: 2 }]);
-  assert.deepEqual(result.items.map((item) => item.id), ["a", "b", "c"]);
+  assert.deepEqual(calls, [
+    { offset: 0, limit: 2 },
+    { offset: 2, limit: 2 },
+  ]);
+  assert.deepEqual(
+    result.items.map((item) => item.id),
+    ["a", "b", "c"],
+  );
   assert.deepEqual(result.coverage, {
     basis: "当前调用者可见的列表范围",
     pages: 2,
@@ -88,17 +96,30 @@ test("collectPages 不把 total 未满足的短页或空页当完整", async () 
   const result = await collectPages("/api/catalog/entities", {
     limit: 2,
     requestFn: async (pathname) => {
-      const offset = Number(new URL(pathname, "https://local.invalid").searchParams.get("offset"));
+      const offset = Number(
+        new URL(pathname, "https://local.invalid").searchParams.get("offset"),
+      );
       offsets.push(offset);
-      return { status: 200, body: { items: offset === 0 ? [{ id: "a" }] : [], total: 3 } };
+      return {
+        status: 200,
+        body: { items: offset === 0 ? [{ id: "a" }] : [], total: 3 },
+      };
     },
   });
 
   assert.deepEqual(offsets, [0, 1]);
   assert.equal(result.coverage.complete, false);
   assert.equal(result.coverage.rawCount, 1);
-  assert.ok(result.coverage.failures.some((failure) => failure.reason === "short_page_before_total"));
-  assert.ok(result.coverage.failures.some((failure) => failure.reason === "empty_page_before_total"));
+  assert.ok(
+    result.coverage.failures.some(
+      (failure) => failure.reason === "short_page_before_total",
+    ),
+  );
+  assert.ok(
+    result.coverage.failures.some(
+      (failure) => failure.reason === "empty_page_before_total",
+    ),
+  );
 });
 
 test("collectPages 中页失败保留部分数据并记为不完整", async () => {
@@ -106,61 +127,105 @@ test("collectPages 中页失败保留部分数据并记为不完整", async () =
   const result = await collectPages("/api/catalog/entities", {
     limit: 2,
     requestFn: async (pathname) => {
-      const offset = Number(new URL(pathname, "https://local.invalid").searchParams.get("offset"));
+      const offset = Number(
+        new URL(pathname, "https://local.invalid").searchParams.get("offset"),
+      );
       offsets.push(offset);
       if (offset === 2) return { status: 503, body: { error: "unavailable" } };
-      if (offset === 0) return { status: 200, body: { items: [{ id: "a" }, { id: "b" }], total: 5 } };
+      if (offset === 0)
+        return {
+          status: 200,
+          body: { items: [{ id: "a" }, { id: "b" }], total: 5 },
+        };
       return { status: 200, body: { items: [{ id: "e" }], total: 5 } };
     },
   });
 
   assert.deepEqual(offsets, [0, 2, 4]);
-  assert.deepEqual(result.items.map((item) => item.id), ["a", "b", "e"]);
+  assert.deepEqual(
+    result.items.map((item) => item.id),
+    ["a", "b", "e"],
+  );
   assert.equal(result.coverage.rawCount, 3);
   assert.equal(result.coverage.complete, false);
-  assert.ok(result.coverage.failures.some((failure) => failure.reason === "request_failed" && failure.offset === 2));
+  assert.ok(
+    result.coverage.failures.some(
+      (failure) => failure.reason === "request_failed" && failure.offset === 2,
+    ),
+  );
 });
 
 test("collectPages 检出重复页、重复 id 与 total 漂移", async () => {
   const repeated = await collectPages("/api/catalog/entities", {
     limit: 2,
-    requestFn: async () => ({ status: 200, body: { items: [{ id: "a" }, { id: "b" }], total: 4 } }),
+    requestFn: async () => ({
+      status: 200,
+      body: { items: [{ id: "a" }, { id: "b" }], total: 4 },
+    }),
   });
   assert.equal(repeated.coverage.complete, false);
   assert.deepEqual(repeated.coverage.duplicateIds, ["a", "b"]);
-  assert.ok(repeated.coverage.failures.some((failure) => failure.reason === "repeated_page"));
+  assert.ok(
+    repeated.coverage.failures.some(
+      (failure) => failure.reason === "repeated_page",
+    ),
+  );
 
   const drifted = await collectPages("/api/catalog/entities", {
     limit: 2,
-    requestFn: async (pathname) => Number(new URL(pathname, "https://local.invalid").searchParams.get("offset")) === 0
-      ? { status: 200, body: { items: [{ id: "a" }, { id: "b" }], total: 3 } }
-      : { status: 200, body: { items: [{ id: "c" }], total: 4 } },
+    requestFn: async (pathname) =>
+      Number(
+        new URL(pathname, "https://local.invalid").searchParams.get("offset"),
+      ) === 0
+        ? { status: 200, body: { items: [{ id: "a" }, { id: "b" }], total: 3 } }
+        : { status: 200, body: { items: [{ id: "c" }], total: 4 } },
   });
   assert.equal(drifted.coverage.complete, false);
-  assert.ok(drifted.coverage.failures.some((failure) => failure.reason === "total_drift"));
+  assert.ok(
+    drifted.coverage.failures.some(
+      (failure) => failure.reason === "total_drift",
+    ),
+  );
 
   const duplicate = await collectPages("/api/catalog/entities", {
     limit: 2,
-    requestFn: async (pathname) => Number(new URL(pathname, "https://local.invalid").searchParams.get("offset")) === 0
-      ? { status: 200, body: { items: [{ id: "a" }, { id: "b" }], total: 4 } }
-      : { status: 200, body: { items: [{ id: "b" }, { id: "c" }], total: 4 } },
+    requestFn: async (pathname) =>
+      Number(
+        new URL(pathname, "https://local.invalid").searchParams.get("offset"),
+      ) === 0
+        ? { status: 200, body: { items: [{ id: "a" }, { id: "b" }], total: 4 } }
+        : {
+            status: 200,
+            body: { items: [{ id: "b" }, { id: "c" }], total: 4 },
+          },
   });
   assert.deepEqual(duplicate.coverage.duplicateIds, ["b"]);
-  assert.deepEqual(duplicate.items.map((item) => item.id), ["a", "b", "c"]);
+  assert.deepEqual(
+    duplicate.items.map((item) => item.id),
+    ["a", "b", "c"],
+  );
   assert.equal(duplicate.coverage.complete, false);
 });
 
 test("分页参数归自动分页器管理，拒绝调用者覆盖", async () => {
   await assert.rejects(
-    collectPages("/api/catalog/entities", { params: { offset: 10 }, requestFn: async () => null }),
+    collectPages("/api/catalog/entities", {
+      params: { offset: 10 },
+      requestFn: async () => null,
+    }),
     /分页参数由 collectPages 管理/,
   );
   await assert.rejects(
-    collectPages("/api/catalog/entities", { params: { page: 2 }, requestFn: async () => null }),
+    collectPages("/api/catalog/entities", {
+      params: { page: 2 },
+      requestFn: async () => null,
+    }),
     /分页参数由 collectPages 管理/,
   );
   await assert.rejects(
-    collectPages("/api/catalog/entities?offset=20", { requestFn: async () => null }),
+    collectPages("/api/catalog/entities?offset=20", {
+      requestFn: async () => null,
+    }),
     /不能写在 pathname query 中/,
   );
 });
@@ -186,7 +251,10 @@ test("listAll 保持数组 API，遇到不完整分页时抛出带 coverage 的�
   globalThis.fetch = async (url) => {
     const offset = Number(new URL(String(url)).searchParams.get("offset"));
     offsetCalls += 1;
-    return jsonResponse({ items: offset === 0 ? [{ id: "a" }, { id: "b" }] : [], total: 4 });
+    return jsonResponse({
+      items: offset === 0 ? [{ id: "a" }, { id: "b" }] : [],
+      total: 4,
+    });
   };
 
   await assert.rejects(listAll("/api/catalog/entities", {}, 2), (error) => {
@@ -208,7 +276,9 @@ test("listAll 异常包含失败页 HTTP 状态", async () => {
 
 test("request 遮盖 fetch 异常详情中的 PAT", async () => {
   const token = process.env.MF_PAT;
-  globalThis.fetch = async () => { throw new Error(`socket failed with ${token}`); };
+  globalThis.fetch = async () => {
+    throw new Error(`socket failed with ${token}`);
+  };
 
   const result = await request("/api/catalog/entities", { tries: 1 });
   assert.equal(result.status, 0);
@@ -225,87 +295,4 @@ test("writableEntity 保留完整可写实体并剔除只读投影", () => {
   assert.deepEqual(writable.attributes, { language: "en" });
   assert.equal(writable.created_by, undefined);
   assert.equal(writable.updated_at, undefined);
-});
-
-test("putEntity 使用完整 PUT、expected_version，并在成功后回读", async () => {
-  const calls = [];
-  let getCount = 0;
-  globalThis.fetch = async (url, init = {}) => {
-    const method = init.method || "GET";
-    calls.push({ url: String(url), method, body: init.body ? JSON.parse(init.body) : null });
-    if (method === "PUT") {
-      const updated = { ...currentEntity(), version: 5, updated_at: "2026-01-02T00:00:00Z" };
-      return jsonResponse(updated);
-    }
-    getCount += 1;
-    return jsonResponse(getCount === 1 ? currentEntity() : { ...currentEntity(), version: 5, updated_at: "2026-01-02T00:00:00Z" });
-  };
-
-  const result = await putEntity("entity-1", (entity) => {
-    entity.translations["zh-CN"] = { title: "示例" };
-    return true;
-  }, {
-    editNote: "根据官方作品页补充中文正式译名",
-    sources: [{
-      kind: "url",
-      citation: "官方本地化页：支持 work.translations.zh-CN.title",
-      url: "https://example.org/official-zh-CN",
-    }],
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.readbackOK, true);
-  assert.equal(result.readback.version, 5);
-  assert.equal(calls.length, 3);
-  assert.deepEqual(calls.map((call) => call.method), ["GET", "PUT", "GET"]);
-  assert.equal(calls[1].body.expected_version, 4);
-  assert.equal(calls[1].body.entity.created_by, undefined);
-  assert.equal(calls[1].body.entity.updated_at, undefined);
-  assert.equal(calls[1].body.entity.translations["zh-CN"].title, "示例");
-  assert.match(calls[1].body.sources[0].citation, /translations\.zh-CN\.title/);
-});
-
-test("putEntity 遇到 409 不自动重放，也不把冲突当成功", async () => {
-  const calls = [];
-  globalThis.fetch = async (url, init = {}) => {
-    const method = init.method || "GET";
-    calls.push(method);
-    if (method === "PUT") return jsonResponse({ error: "version_conflict" }, 409);
-    return jsonResponse(currentEntity());
-  };
-
-  const result = await putEntity("entity-1", (entity) => {
-    entity.title = "Changed";
-    return true;
-  }, {
-    editNote: "并发测试",
-    sources: [{ kind: "publication", citation: "官方出版记录：支持 work.title" }],
-  });
-
-  assert.equal(result.ok, false);
-  assert.equal(result.status, 409);
-  assert.equal(result.readbackOK, false);
-  assert.equal(result.readbackStatus, null);
-  assert.deepEqual(calls, ["GET", "PUT"]);
-});
-
-test("putEntity 在 mutate 与写入前拒绝 Track，预览也不能产生可应用的 PUT", async () => {
-  for (const dryRun of [false, true]) {
-    const calls = [];
-    let mutated = false;
-    globalThis.fetch = async (_url, init = {}) => {
-      calls.push(init.method || "GET");
-      return jsonResponse({ ...currentEntity(), kind: "track", contents: [] });
-    };
-    await assert.rejects(putEntity("entity-1", () => {
-      mutated = true;
-      return { title: "Changed" };
-    }, {
-      dryRun,
-      editNote: "官方曲序题名",
-      sources: [{ kind: "publication", citation: "官方曲序：支持 track.title" }],
-    }), /Track 禁止整实体 PUT/);
-    assert.equal(mutated, false);
-    assert.deepEqual(calls, ["GET"]);
-  }
 });

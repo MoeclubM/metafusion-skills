@@ -6,3 +6,5 @@ plans-*/
 __pycache__/
 *.pyc
 *.pyo
+
+/skills/metafusion-curator/workspaces/

@@ -7,6 +7,6 @@
 本目录 `credentials.json` 已忽略：`{"baseUrl":"https://example.com","pat":"<本机填写>"}`。
 `MF_BASE/MF_PAT` 可临时覆盖；`MF_CREDENTIALS` 可指定另一文件。真实凭据不进入日志或版本库。
 
-## 低层客户端
+## 客户端与工作区
 
-`putEntity` 是整实体替换，不是 patch；**Track 禁用**，其 GET contents 可能被可见性裁剪。其他写入契约见 [API 行为](../reference-api-behavior.md)，载荷见 [模板](../reference-api-templates.md)。
+`request` 提供认证与只读重试，`collectPages` 保留分页覆盖证明；不提供整实体 putEntity 写入 helper。编目编辑使用 [mf-workspace](../reference-workflow.md)，凭据文件放工作区之外；每个 Agent 使用自己的目录。

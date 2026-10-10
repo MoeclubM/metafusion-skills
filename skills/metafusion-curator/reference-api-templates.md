@@ -25,7 +25,11 @@
 
 `self` 只能记录没有新增外部断言的维护、清理或限制说明，不能支撑题名、简介、编号、关系、身份锚点或封面权利。公开可访问的作者/机构自述应按 `url` 或 `publication` 登记，并仍按[字段级来源策略](reference-source-policy.md)判断是否满足核心门槛。服务端通过也不等于 CORE-P1 已核实。
 
-## 写入信封
+## 变更集信封
+
+Agent 普通编辑使用 checkout 与 CatalogCommit，完整协议只维护在[公开提交文档](https://github.com/MoeclubM/metafusion-docs/blob/main/docs/api-commits.md)，本地流程见[提交与恢复](reference-workflow.md)。操作携带 base_version、JSON Pointer patch；实体创建声明 reviewed_candidate_ids 与本批 ref。
+
+## 单对象交互式信封
 
 创建与更新共用同一信封：`POST /api/catalog/entities`（`expected_version` 必须为 0、`entity.id` 留空）与
 `PUT /api/catalog/entities/{id}`（`expected_version` 为回读到的 `version`）。
@@ -41,7 +45,7 @@ PUT 是**整实体替换**：带当前 `expected_version`，写后回读并逐�
 
 状态切换由端点与 DTO 决定，不提交 `action`：`POST /api/catalog/entities/{id}/lifecycle` 的 `LifecycleEdit` 无 `action`（`target_id` 有值时合并，无值时删除）；发布走实体 `PUT` 并设 `entity.status: "published"`，至少需要一条翻译；`POST /api/catalog/entities/{id}/unpublish` 只允许 `published → draft`，其 DTO 不含 `target_id`。
 
-本地 `mf-guarded-update` 与 `mf-track-content` 的 plan 字段和参数以各自 `--help` 为准。本页只维护服务端 API 请求形状；工具默认预览，执行开关不提供任务授权。
+本地 `mf-workspace` 与 `mf-track-content` 的 plan 字段和参数以各自 `--help` 为准。本页只维护服务端 API 请求形状；工具默认预览，执行开关不提供任务授权。
 
 ## 各 kind 允许的结构字段
 
@@ -242,7 +246,7 @@ PUT 是**整实体替换**：带当前 `expected_version`，写后回读并逐�
 
 ## track
 
-下例是服务端创建载荷。`mf-platform entity.create` 不接受 `contents`，使用工具时先建 Track，再以专用收录操作添加；这是工具范围限制，不是 Entity DTO 缺少该字段。
+下例是服务端创建载荷。`mf-workspace` 可在同一批中先建作用域与表达，再以 `$ref` 创建 Track.contents；已存在 Track 的隐藏收录仍使用专用 contents 端点。
 
     {
       "entity": {

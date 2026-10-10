@@ -21,6 +21,10 @@
 | 错误码 | 含义 | 修复动作 |
 | --- | --- | --- |
 | `evidence_required` | 缺 `edit_note`，或 `sources` 为空 | 补具体修改说明 + 至少一条来源；这只是载荷门，仍须按[字段级来源策略](reference-source-policy.md)逐字段核验 P1 |
+| `commit_conflict` | 同字段产生不同并发改动，整批回滚 | 保留提交，核证据后明确 ours/theirs 并 rebase |
+| `definitions_conflict` | 定义基线变化 | 核当前动态约束再 rebase |
+| `identity_candidates_changed` | 可见身份候选与审查列表不同 | 核新候选身份，复用或有证据地更新审查，不能机械全选 |
+| `identity_candidates_incomplete` / `identity_candidate_unresolved` | 无完整候选集合 | 收窄或核未解析身份，停止依赖创建 |
 | `invalid_source` | 来源格式不对 | `kind` 只能是 `url`/`publication`/`self`；`citation` 必填并列出支持字段；带 `url` 时必须为合法 HTTP(S) 且不含用户信息。`self` 不能支撑字段事实 |
 | `invalid_payload` | 载荷形状不对（含未知顶层字段）；消息可能指明位置（`invalid_payload: work.title`） | 严格按当前 DTO 写：发行版名用 `title`、时长用 `duration`、证据用 `sources` 对象数组；未知键一律删掉再试 |
 | `id_must_be_empty` | 创建时带了 `entity.id` | 创建一律留空 id、`expected_version` 传 0 |

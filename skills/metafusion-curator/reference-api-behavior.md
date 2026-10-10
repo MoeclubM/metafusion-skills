@@ -7,7 +7,7 @@
 - 元数据 API 统一位于 `/api`。开始实例操作时读取 `/api/openapi.json`、`/api/catalog/definitions`，再检查目标实体、权限和可见性；不要由旧快照或示例推断当前能力。
 - 字段、词表、关系、模板和 locator 以 `definitions.document` 为准，只使用当前启用项；`names` 是显示文本，不是能力声明。definitions 只提供一份当前文档，无历史或回滚；没有结构引用字段的 kind，其 `structure.<kind>.fields` 可为 `null`。
 - OpenAPI 是 handler 反射结果：schema 的 `required` 可能为空，`Idempotency-Key` 也可能只写在 operation summary 而未声明为 parameter。不要仅据这些形状推断字段或请求头必填/可选；核目标实例和实际处理器。
-- 实体结构仍遵循八种固定 kind。`Release.subjects` 声明发行包含的 Work，`Track.contents` 结构性地引用 Expression；它们不是关系，跨实体维护不具原子性。`track_work` 若在当前 `release_role` 中启用，只能作为 subject role 使用，不是关系码。
+- 实体结构仍遵循八种固定 kind。`Release.subjects` 声明发行包含的 Work，`Track.contents` 结构性地引用 Expression；它们不是关系；同一 commit 可原子维护，跨批次仍须记录进度。`track_work` 若在当前 `release_role` 中启用，只能作为 subject role 使用，不是关系码。
 
 ## 读取与证据
 
@@ -19,18 +19,17 @@
 
 ## 并发查重
 
-- `mf-find-identity` 与 `mf-platform entity.create` 使用只读 `POST /api/catalog/entities/candidates`，在同一 PostgreSQL 快照中查题名/别名、外部 ID、标量属性并解析 canonical；无关实体新增或更新不要求重新扫描全库。
+- `mf-find-identity` 与 commit 创建复核 使用只读 `POST /api/catalog/entities/candidates`，在同一 PostgreSQL 快照中查题名/别名、外部 ID、标量属性并解析 canonical；无关实体新增或更新不要求重新扫描全库。
 - `coverage.total` 统计匹配的原始候选，非整个 kind 的行数。`--limit` 是候选上限（默认/最大 1000），超过上限为 partial，收窄条件；不要反复扫描、睡眠等待低峰或移除属性绕过候选核验。
 - 实例缺少候选端点、查询失败、候选截断或 canonical 未解析时停止依赖写入，不回退 offset 扫描，不把错误当零候选。快照不预留后续创建；不同 Agent 应避免重复分派同一身份，未知写结果保持原创建键并先回读。
 
 ## 写入边界
 
-- 严格 DTO 会拒绝未知字段。创建、实体更新和关系操作的请求形状只查[载荷模板](reference-api-templates.md)及实例 OpenAPI；动态字段或枚举不从模板抄作服务器能力。
-- 实体 `PUT` 是整实体替换，必须带当前 `expected_version` 并保留所有未修改的可写字段。正式题名、季名按官方证据维护，不机械改写；版次品番、包装或规格不拼入 Work 题名。
-- **禁止对任何 Track 执行整实体 PUT，包括只改标题。** Track 的 GET `contents` 可能按当前用户可见性裁剪，回写该投影会丢失被裁剪的收录。Track 内容只使用目标实例支持的专用 contents 操作；本地使用哪个受控工具由[工具入口](local/tools/README.md)与工具 `--help` 决定。
-- Track 状态使用 `PATCH /api/catalog/tracks/{id}/status`，由服务端事务读取完整事实；先核 OpenAPI 支持，缺端点不回退 PUT。请求只含 `status/expected_version/edit_note/sources`；发布降级仍走 unpublish，载荷见[模板](reference-api-templates.md#track)。
-- 单条 Track contents 的 `inclusion.sources` 省略时，若 `expression_id`、`locator`、`attributes` 与旧项一致则保留旧来源；新增或这些事实有变化则继承本次编辑的顶层 `sources`。显式提供项级 `sources` 时优先。
-- 写请求不得自动重试。收到 `409 version_conflict` 或写入结果不明时，先回读实体和当前修订，核对是否已生效及并发改动，再决定是否基于新版本重做；不得盲目重放。
-- 写后按任务核对实体版本与字段、当前修订、关系和 occurrences。`2xx`、工具成功标志或 `readbackOK` 不能代替内容复核；操作部分完成时报告 partial。
+- 普通编目使用 [工作副本与提交](reference-workflow.md)，服务端复用单实体的权限、动态 definitions、事实校验与审计。每批最多100个 create/update，所有事实、修订、通知与搜索 outbox 同一事务；预览整笔回滚。
+- 更新由权威 base_version 与稀疏 patch 比较字段，互不重叠自动合并，相同值不增加修订，重叠不同值整批冲突。对象逐键、数组原子；归属和服务端字段不可修改。
+- Track 元数据 patch 由服务端读取完整 facts，保留未提交的隐藏 contents。隐藏收录仍走专用 contents 操作；来源继承规则由服务端实现，不从可见投影推断所有旧事实。
+- 固定 commit ID 与载荷可重放持久回执；未知结果查询回执，不更换 ID 或基线。明确拒绝才能 rebase；409 不盲目回写当前整份实体。
+- 普通交互式 API 的 PUT 仍是整实体替换，本技能不走这个写通道。合并身份、删除、定义与文件操作有独立边界，不能声称跨服务或跨批次原子。
+- 写后核当前条目、修订、关系与 occurrences；只读完整性仍按声明的可见范围，不由工具成功标志推断全库覆盖。
 
 权限、实体可见性和跨服务边界见[接口归属与写入范围](reference-endpoint-scope.md)；实体层级见[数据模型](reference-data-model.md)。
