@@ -17,6 +17,12 @@
 - 当前修订只按 `revision.version == entity.version` 选择，不能默认列表首项最新。实体来源位于修订记录，属于修订级证据而非字段级 provenance；载荷被服务端接受不证明来源权威，按[来源策略](reference-source-policy.md)逐字段核验。
 - 修订行只有写后 `snapshot`，没有 `before` / `after`；Track 历史投影也可能按可见性裁剪，不是完整备份，不能用来恢复不可见收录。
 
+## 并发查重
+
+- `mf-find-identity` 与 `mf-platform entity.create` 使用只读 `POST /api/catalog/entities/candidates`，在同一 PostgreSQL 快照中查题名/别名、外部 ID、标量属性并解析 canonical；无关实体新增或更新不要求重新扫描全库。
+- `coverage.total` 统计匹配的原始候选，非整个 kind 的行数。`--limit` 是候选上限（默认/最大 1000），超过上限为 partial，收窄条件；不要反复扫描、睡眠等待低峰或移除属性绕过候选核验。
+- 实例缺少候选端点、查询失败、候选截断或 canonical 未解析时停止依赖写入，不回退 offset 扫描，不把错误当零候选。快照不预留后续创建；不同 Agent 应避免重复分派同一身份，未知写结果保持原创建键并先回读。
+
 ## 写入边界
 
 - 严格 DTO 会拒绝未知字段。创建、实体更新和关系操作的请求形状只查[载荷模板](reference-api-templates.md)及实例 OpenAPI；动态字段或枚举不从模板抄作服务器能力。

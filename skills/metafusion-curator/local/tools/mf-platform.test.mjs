@@ -241,7 +241,7 @@ test("create rejects attributes absent from current Fields[].applicable_kinds be
   const result = await runPlan(plan, { apply: true, requestFn });
   assert.equal(result.code, "unknown_field");
   assert.equal(calls.length, 2); // OpenAPI contract, then definitions.
-  assert.equal(calls.some((call) => call.options.method === "POST"), false);
+  assert.equal(calls.some((call) => call.options.method === "POST" && call.pathname !== "/api/catalog/entities/candidates"), false);
 });
 test("entity create refuses a write plan when runtime OpenAPI does not confirm its POST contract", async () => {
   const contract = openApiContract();
@@ -258,7 +258,7 @@ test("runtime definitions accept a declared structure.fields null as the Go nil-
     if (pathname === "/api/catalog/definitions") return { status: 200, body: definitions({
       structure: { work: { fields: null, subjects: false, contents: false } },
     }) };
-    if (pathname.startsWith("/api/catalog/entities?")) return { status: 200, body: { items: [], total: 0 } };
+    if (pathname === "/api/catalog/entities/candidates") return { status: 200, body: { basis: "postgres_repeatable_read", complete: true, items: [], total: 0 } };
     assert.fail(`unexpected request ${pathname}`);
   });
   const result = await runPlan(createPlan(), { requestFn });
@@ -273,7 +273,7 @@ test("missing or malformed structure.fields remains unknown instead of becoming 
     if (fields !== undefined) structure.work.fields = fields;
     const { requestFn } = mockRequest((pathname) => pathname === "/api/catalog/definitions"
       ? { status: 200, body: definitions({ structure }) }
-      : { status: 200, body: { items: [], total: 0 } });
+      : { status: 200, body: { basis: "postgres_repeatable_read", complete: true, items: [], total: 0 } });
     const result = await runPlan(createPlan(), { requestFn });
     assert.equal(result.outcome, "partial");
     assert.equal(result.reason, "structure_contract_unavailable");
@@ -321,31 +321,29 @@ test("create requires dynamic fields to be applicable to the entity kind", async
 test("create preview checks caller-visible candidate search but sends no write", async () => {
   const { requestFn, calls } = mockRequest((pathname, options) => {
     if (pathname === "/api/catalog/definitions") return { status: 200, body: definitions() };
-    if (pathname.startsWith("/api/catalog/entities?")) return { status: 200, body: { items: [], total: 0 } };
+    if (pathname === "/api/catalog/entities/candidates") return { status: 200, body: { basis: "postgres_repeatable_read", complete: true, items: [], total: 0 } };
     assert.fail(`unexpected request ${options.method} ${pathname}`);
   });
   const result = await runPlan(createPlan(), { requestFn });
   assert.equal(result.ok, true);
   assert.equal(result.outcome, "preview");
   assert.equal(result.duplicateCheck.visibilityScope, "current caller-visible results only; absent candidates do not prove no duplicate exists elsewhere");
-  assert.equal(calls.some((call) => call.options.method === "POST"), false);
+  assert.equal(calls.some((call) => call.options.method === "POST" && call.pathname !== "/api/catalog/entities/candidates"), false);
 });
 
 test("create stops when a new candidate was not explicitly reviewed as distinct", async () => {
   const { requestFn, calls } = mockRequest((pathname) => {
     if (pathname === "/api/catalog/definitions") return { status: 200, body: definitions() };
-    if (pathname === "/api/catalog/entities?kind=work&limit=100&offset=0") {
-      return { status: 200, body: { items: [{ id: "possible-duplicate", kind: "work", title: "New work", status: "published", version: 2 }], total: 1 } };
-    }
-    if (pathname === "/api/catalog/entities/possible-duplicate/resolve") {
-      return { status: 200, body: { id: "possible-duplicate", kind: "work", title: "New work", status: "published", version: 2 } };
+    if (pathname === "/api/catalog/entities/candidates") {
+      const candidate = { id: "possible-duplicate", kind: "work", title: "New work", status: "published", version: 3 };
+      return { status: 200, body: { basis: "postgres_repeatable_read", complete: true, items: [{ matched: candidate, canonical: candidate }], total: 1 } };
     }
     assert.fail(`unexpected request ${pathname}`);
   });
   const result = await runPlan(createPlan(), { apply: true, requestFn });
   assert.equal(result.outcome, "review_required");
   assert.deepEqual(result.candidateIds, ["possible-duplicate"]);
-  assert.equal(calls.some((call) => call.options.method === "POST"), false);
+  assert.equal(calls.some((call) => call.options.method === "POST" && call.pathname !== "/api/catalog/entities/candidates"), false);
 });
 
 test("create duplicate guard searches translated titles, aliases, external IDs, and identity attributes", async () => {
@@ -362,8 +360,7 @@ test("create duplicate guard searches translated titles, aliases, external IDs, 
     if (pathname === "/api/catalog/definitions") return { status: 200, body: definitions({
       fields: { barcode: { enabled: true, type: "text", applicable_kinds: ["work"] } },
     }) };
-    if (pathname.startsWith("/api/catalog/entities?")) return { status: 200, body: { items: [visibleCandidate], total: 1 } };
-    if (pathname === "/api/catalog/entities/candidate-x/resolve") return { status: 200, body: visibleCandidate };
+    if (pathname === "/api/catalog/entities/candidates") return { status: 200, body: { basis: "postgres_repeatable_read", complete: true, items: [{ matched: visibleCandidate, canonical: visibleCandidate }], total: 1 } };
     assert.fail(`unexpected request ${pathname}`);
   });
   const result = await runPlan(createPlan({ entity }), { requestFn });
@@ -372,7 +369,7 @@ test("create duplicate guard searches translated titles, aliases, external IDs, 
   assert.ok(result.candidates[0].matched_reasons.some((item) => item.matched_field === "translations.ja-JP.title"));
   assert.ok(result.candidates[0].matched_reasons.some((item) => item.matched_field === "external_ids.imdb"));
   assert.ok(result.candidates[0].matched_reasons.some((item) => item.matched_field === "attributes.barcode"));
-  assert.equal(calls.some((call) => call.options.method === "POST"), false);
+  assert.equal(calls.some((call) => call.options.method === "POST" && call.pathname !== "/api/catalog/entities/candidates"), false);
 });
 
 test("entity create sends one idempotent POST and verifies the matching revision version", async () => {
@@ -384,7 +381,7 @@ test("entity create sends one idempotent POST and verifies the matching revision
   let posted = false;
   const { requestFn, calls } = mockRequest((pathname, options) => {
     if (pathname === "/api/catalog/definitions") return { status: 200, body: definitions() };
-    if (pathname.startsWith("/api/catalog/entities?") && options.method !== "POST") return { status: 200, body: { items: [], total: 0 } };
+    if (pathname === "/api/catalog/entities/candidates") return { status: 200, body: { basis: "postgres_repeatable_read", complete: true, items: [], total: 0 } };
     if (pathname === "/api/catalog/entities" && options.method === "POST") {
       posted = true;
       assert.equal(options.tries, 1);
@@ -407,20 +404,20 @@ test("entity create sends one idempotent POST and verifies the matching revision
   assert.equal(result.ok, true);
   assert.equal(result.outcome, "verified");
   assert.equal(result.revisionCheck.version, 1);
-  assert.equal(calls.filter((call) => call.options.method === "POST").length, 1);
+  assert.equal(calls.filter((call) => call.options.method === "POST" && call.pathname !== "/api/catalog/entities/candidates").length, 1);
 });
 
 test("entity create does not retry or claim success after an unknown write result", async () => {
   const { requestFn, calls } = mockRequest((pathname, options) => {
     if (pathname === "/api/catalog/definitions") return { status: 200, body: definitions() };
-    if (pathname.startsWith("/api/catalog/entities?") && options.method !== "POST") return { status: 200, body: { items: [], total: 0 } };
+    if (pathname === "/api/catalog/entities/candidates") return { status: 200, body: { basis: "postgres_repeatable_read", complete: true, items: [], total: 0 } };
     if (pathname === "/api/catalog/entities" && options.method === "POST") throw new Error("socket closed after send");
     assert.fail(`unexpected retry/read after unknown result: ${pathname}`);
   });
   const result = await runPlan(createPlan(), { apply: true, requestFn });
   assert.equal(result.outcome, "unknown");
   assert.equal(result.applied, null);
-  assert.equal(calls.filter((call) => call.options.method === "POST").length, 1);
+  assert.equal(calls.filter((call) => call.options.method === "POST" && call.pathname !== "/api/catalog/entities/candidates").length, 1);
 });
 
 test("relation preview resolves enabled direction and both endpoint kinds without writing", async () => {
@@ -440,7 +437,7 @@ test("relation preview resolves enabled direction and both endpoint kinds withou
   assert.equal(result.direction.source.id, "work-a");
   assert.equal(result.direction.target.id, "work-b");
   assert.deepEqual(result.direction.definition.source_kinds, ["work"]);
-  assert.equal(calls.some((call) => call.options.method === "POST"), false);
+  assert.equal(calls.some((call) => call.options.method === "POST" && call.pathname !== "/api/catalog/entities/candidates"), false);
 });
 
 test("relation endpoint HTTP 200 with missing version is unknown shape, not preflight success", async () => {
@@ -457,7 +454,7 @@ test("relation endpoint HTTP 200 with missing version is unknown shape, not pref
   assert.equal(result.outcome, "partial");
   assert.equal(result.reason, "relation_source_entity_shape_invalid");
   assert.equal(calls.some((call) => call.pathname.endsWith("/relations")), false);
-  assert.equal(calls.some((call) => call.options.method === "POST"), false);
+  assert.equal(calls.some((call) => call.options.method === "POST" && call.pathname !== "/api/catalog/entities/candidates"), false);
 });
 
 test("relation create response without a positive version stays partial", async () => {
@@ -478,7 +475,7 @@ test("relation create response without a positive version stays partial", async 
   assert.equal(result.outcome, "partial");
   assert.equal(result.reason, "relation_create_response_shape_invalid");
   assert.equal(result.applied, true);
-  assert.equal(calls.filter((call) => call.options.method === "POST").length, 1);
+  assert.equal(calls.filter((call) => call.options.method === "POST" && call.pathname !== "/api/catalog/entities/candidates").length, 1);
 });
 
 test("relation create uses one Idempotency-Key POST and verifies both endpoint lists", async () => {
@@ -506,7 +503,7 @@ test("relation create uses one Idempotency-Key POST and verifies both endpoint l
   assert.equal(result.outcome, "readback_verified");
   assert.equal(result.sourceReadback, true);
   assert.equal(result.targetReadback, true);
-  assert.equal(calls.filter((call) => call.options.method === "POST").length, 1);
+  assert.equal(calls.filter((call) => call.options.method === "POST" && call.pathname !== "/api/catalog/entities/candidates").length, 1);
 });
 
 test("current-revision selects by version, not by response ordering", async () => {
@@ -619,5 +616,5 @@ test("track-content.add delegates to the dedicated helper and defaults to previe
     },
   }, { requestFn });
   assert.equal(result.ok, true, JSON.stringify({ result, calls }));
-  assert.equal(calls.some((call) => call.options.method === "POST"), false);
+  assert.equal(calls.some((call) => call.options.method === "POST" && call.pathname !== "/api/catalog/entities/candidates"), false);
 });

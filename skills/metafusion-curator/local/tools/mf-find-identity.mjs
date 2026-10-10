@@ -6,8 +6,7 @@ import { request as apiRequest } from "../metafusion-api.mjs";
 const KINDS = new Set([
   "agent", "collection", "work", "content_unit", "expression", "release", "medium", "track",
 ]);
-const DEFAULT_LIMIT = 100;
-const RESOLVE_CONCURRENCY = 4;
+const DEFAULT_LIMIT = 1000;
 
 function cleanText(value) {
   return String(value ?? "").trim();
@@ -31,7 +30,7 @@ function validateInput({ kind = "work", titles = [], externalIds = [], attribute
   const normalizedWorkId = cleanText(workId);
   if (workId !== undefined && workId !== null && !normalizedWorkId) throw new Error("--work-id 不能为空");
   if (normalizedWorkId && kind !== "expression") throw new Error("--work-id 仅适用于 expression");
-  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("limit 必须是 1–100 的整数");
+  if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error("limit 必须是 1–1000 的整数");
 
   const titleValues = [...titles].map(cleanText).filter(Boolean);
   const externalValues = [...externalIds].map((item) => ({
@@ -169,29 +168,6 @@ function candidateEntity(entity) {
   };
 }
 
-async function defaultCollectEntities(options) {
-  const snapshot = await import("./mf-catalog-snapshot.mjs");
-  if (typeof snapshot.collectEntities !== "function") {
-    throw new Error("mf-catalog-snapshot.mjs 未导出 collectEntities");
-  }
-  return snapshot.collectEntities(options);
-}
-
-async function resolveOriginal(id, kind, requestFn) {
-  try {
-    const result = await requestFn("/api/catalog/entities/" + encodeURIComponent(id) + "/resolve");
-    const body = result?.body;
-    const canonicalId = typeof body?.id === "string" ? body.id : "";
-    if (result?.status !== 200 || !canonicalId || body.kind !== kind || body.status === "merged" || body.redirect_id) {
-      return { id, canonical: null, status: result?.status ?? 0,
-        code: body?.error || body?.code || (result?.status === 200 ? "invalid_canonical_response" : "resolve_failed") };
-    }
-    return { id, canonical: body, status: 200, code: null };
-  } catch (error) {
-    return { id, canonical: null, status: 0, code: "request_error", message: safeError(error) };
-  }
-}
-
 function canonicalCandidate(canonical, originals, reasons) {
   return {
     canonical_id: canonical.id,
@@ -215,107 +191,81 @@ function unresolvedCandidate(original, reasons, status, code) {
 
 export async function findIdentity({
   kind = "work", titles = [], externalIds = [], attributes = [], workId, limit = DEFAULT_LIMIT,
-  requestFn = apiRequest, collectEntitiesFn = defaultCollectEntities,
+  requestFn = apiRequest,
 } = {}) {
   const query = validateInput({ kind, titles, externalIds, attributes, workId, limit });
   const queryModes = [];
   if (query.titles.length) queryModes.push({ mode: "title_normalized_equality", values: query.titles });
   if (query.externalIds.length) queryModes.push({ mode: "external_id_exact", values: query.externalIds });
   if (query.attributes.length) queryModes.push({ mode: "attribute_exact", values: query.attributes });
-
-  const params = query.workId ? { work_id: query.workId } : {};
-  const errors = [];
-  const unknown = [];
-  let coverage = { complete: false, reason: "collection_not_started" };
-  let items = [];
+  const errors = [], unknown = [], candidates = [];
+  let coverage = { basis: "server-side identity candidates in one PostgreSQL repeatable-read snapshot",
+    complete: false, pages: 0, total: 0, rawCount: 0, uniqueCount: 0, duplicateIds: [], failures: [] };
+  let rows = [];
   try {
-    const snapshot = await collectEntitiesFn({ kind: query.kind, params, limit: query.limit, requestFn });
-    if (!snapshot || !Array.isArray(snapshot.items)) {
-      throw new Error("collectEntities 返回值缺少 items 数组");
+    const result = await requestFn("/api/catalog/entities/candidates", {
+      method: "POST", tries: 1,
+      body: { kind: query.kind, titles: query.titles, external_ids: query.externalIds,
+        attributes: query.attributes, ...(query.workId ? { work_id: query.workId } : {}), limit: query.limit },
+    });
+    const body = result?.body;
+    if (result?.status !== 200) {
+      unknown.push({ stage: "collection", reason: "candidate_query_failed", status: result?.status ?? 0,
+        code: body?.error ?? "request_failed" });
+    } else if (body?.basis !== "postgres_repeatable_read" || !Array.isArray(body.items)
+        || !Number.isInteger(body.total) || body.total < body.items.length || typeof body.complete !== "boolean"
+        || body.items.length > query.limit || (body.complete && body.total !== body.items.length)) {
+      unknown.push({ stage: "collection", reason: "candidate_response_unverified" });
+    } else {
+      rows = body.items;
+      const ids = rows.map((row) => row?.matched?.id);
+      const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
+      coverage = { ...coverage, pages: 1, total: body.total, rawCount: rows.length,
+        uniqueCount: new Set(ids).size, duplicateIds, complete: body.complete && duplicateIds.length === 0,
+        failures: body.complete ? [] : [{ reason: "candidate_limit_exceeded", limit: query.limit }] };
+      if (!coverageIsComplete(coverage)) unknown.push({ stage: "collection", reason: "coverage_incomplete" });
     }
-    items = snapshot.items;
-    coverage = snapshot.coverage ?? { complete: false, reason: "coverage_missing" };
   } catch (error) {
-    coverage = error?.coverage && typeof error.coverage === "object"
-      ? error.coverage
-      : { complete: false, reason: "collection_failed" };
-    errors.push({ stage: "collection", code: "snapshot_failed", message: safeError(error) });
-    unknown.push({ stage: "collection", reason: "pagination_or_snapshot_unverified" });
-  }
-
-  if (!coverageIsComplete(coverage) && !unknown.some((item) => item.stage === "collection")) {
-    unknown.push({ stage: "collection", reason: "coverage_incomplete" });
-  }
-
-  const matches = new Map();
-  items.forEach((entity, index) => {
-    if (!entity || entity.kind !== query.kind) {
-      unknown.push({ stage: "collection", reason: "invalid_or_wrong_kind_item", index });
-      return;
-    }
-    if (query.workId && entity.work_id !== query.workId) return;
-    if (typeof entity.id !== "string" || !entity.id) {
-      unknown.push({ stage: "collection", reason: "candidate_missing_id", index });
-      return;
-    }
-    const reasons = matchReasons(entity, query);
-    if (!reasons.length) return;
-    if (!matches.has(entity.id)) matches.set(entity.id, { entity, reasons: [] });
-    const match = matches.get(entity.id);
-    for (const reason of reasons) addReason(match.reasons, { ...reason, original_id: entity.id });
-  });
-
-  const matched = [...matches.entries()].sort(([left], [right]) => left.localeCompare(right));
-  const resolutions = [];
-  for (let offset = 0; offset < matched.length; offset += RESOLVE_CONCURRENCY) {
-    const batch = matched.slice(offset, offset + RESOLVE_CONCURRENCY);
-    resolutions.push(...await Promise.all(batch.map(([id]) => resolveOriginal(id, query.kind, requestFn))));
+    errors.push({ stage: "collection", code: "candidate_query_failed", message: safeError(error) });
+    unknown.push({ stage: "collection", reason: "candidate_query_unverified", status: 0 });
   }
 
   const canonicalGroups = new Map();
-  const candidates = [];
-  for (const resolution of resolutions) {
-    const match = matches.get(resolution.id);
-    if (!resolution.canonical) {
-      const candidate = unresolvedCandidate(match.entity, match.reasons, resolution.status, resolution.code);
-      candidates.push(candidate);
-      const unknownItem = { stage: "resolve", reason: "canonical_identity_unverified", original_id: resolution.id,
-        status: resolution.status, code: resolution.code };
-      if (resolution.message) unknownItem.message = resolution.message;
-      unknown.push(unknownItem);
-      errors.push({ stage: "resolve", original_id: resolution.id, status: resolution.status, code: resolution.code });
+  for (const row of rows) {
+    const original = row?.matched;
+    if (!original?.id || original.kind !== query.kind || (query.workId && original.work_id !== query.workId)) {
+      unknown.push({ stage: "collection", reason: "invalid_or_wrong_scope_item" });
       continue;
     }
-    const canonicalId = resolution.canonical.id;
-    if (!canonicalGroups.has(canonicalId)) {
-      canonicalGroups.set(canonicalId, { canonical: resolution.canonical, originals: [], reasons: [] });
+    const reasons = matchReasons(original, query).map((reason) => ({ ...reason, original_id: original.id }));
+    if (!reasons.length) {
+      unknown.push({ stage: "collection", reason: "candidate_match_unverified", original_id: original.id });
+      continue;
     }
-    const group = canonicalGroups.get(canonicalId);
-    if (!group.originals.includes(resolution.id)) group.originals.push(resolution.id);
-    for (const reason of match.reasons) addReason(group.reasons, reason);
+    const canonical = row.canonical;
+    if (!canonical?.id || canonical.kind !== query.kind || ["merged", "deleted"].includes(canonical.status)
+        || (query.workId && canonical.work_id !== query.workId) || row.resolution_error) {
+      candidates.push(unresolvedCandidate(original, reasons, 404, "canonical_identity_unverified"));
+      unknown.push({ stage: "resolve", reason: "canonical_identity_unverified", original_id: original.id, status: 404 });
+      continue;
+    }
+    if (!canonicalGroups.has(canonical.id)) canonicalGroups.set(canonical.id, { canonical, originals: [], reasons: [] });
+    const group = canonicalGroups.get(canonical.id);
+    if (!group.originals.includes(original.id)) group.originals.push(original.id);
+    for (const reason of reasons) addReason(group.reasons, reason);
   }
   for (const group of canonicalGroups.values()) {
     candidates.push(canonicalCandidate(group.canonical, group.originals.sort(), group.reasons));
   }
   candidates.sort((left, right) => String(left.canonical_id || left.matched_original_ids[0])
     .localeCompare(String(right.canonical_id || right.matched_original_ids[0])));
-
   const complete = coverageIsComplete(coverage) && unknown.length === 0;
   const decision = candidates.length || !complete || errors.length ? "needs_evidence" : "no_visible_candidate";
-  return {
-    kind: query.kind,
-    scope: { work_id: query.workId },
-    query_modes: queryModes,
-    coverage,
-    candidates,
-    unknown,
-    errors,
-    decision,
-    identity_confirmed: false,
+  return { kind: query.kind, scope: { work_id: query.workId }, query_modes: queryModes,
+    coverage, candidates, unknown, errors, decision, identity_confirmed: false,
     decision_note: decision === "no_visible_candidate"
       ? "本次可见范围无候选；不证明真实实例中不存在重复实体。"
-      : "候选匹配仅用于定位；身份仍需依据内容与来源人工核验。",
-  };
+      : "候选匹配仅用于定位；身份仍需依据内容与来源人工核验。" };
 }
 
 function parsePair(value, label) {
@@ -382,7 +332,7 @@ export function usage() {
     "  --external <provider=id>  可重复；外部标识精确匹配",
     "  --attribute <key=value>   可重复；attributes 字段精确匹配",
     "  --work-id <id>            限定 expression 所属 Work",
-    "  --limit <1-100>           每页大小，默认 100",
+    "  --limit <1-1000>          候选上限，默认 1000；超过上限报告 partial",
     "  --out <file.json>         将完整结果写入 JSON 文件",
     "  --help                    显示帮助，不读取凭据或请求 API",
     "",
@@ -390,8 +340,7 @@ export function usage() {
   ].join("\n");
 }
 
-export async function runCli(argv = process.argv.slice(2), { stdout, stderr, requestFn = apiRequest,
-  collectEntitiesFn = defaultCollectEntities } = {}) {
+export async function runCli(argv = process.argv.slice(2), { stdout, stderr, requestFn = apiRequest } = {}) {
   const writeOut = stdout || ((text) => process.stdout.write(String(text) + "\n"));
   const writeErr = stderr || ((text) => process.stderr.write(String(text) + "\n"));
   let options;
@@ -409,7 +358,7 @@ export async function runCli(argv = process.argv.slice(2), { stdout, stderr, req
 
   let report;
   try {
-    report = await findIdentity({ ...options, requestFn, collectEntitiesFn });
+    report = await findIdentity({ ...options, requestFn });
   } catch (error) {
     writeErr(safeError(error));
     return 2;

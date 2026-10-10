@@ -674,7 +674,7 @@ async function createEntity(plan, { apply, requestFn, findIdentityFn = findIdent
   const { entity } = preflight;
   let identityReport;
   try {
-    identityReport = await findIdentityFn({ ...identityCandidateInputs(entity), limit: 100, requestFn });
+    identityReport = await findIdentityFn({ ...identityCandidateInputs(entity), requestFn });
   } catch (error) {
     return { ok: false, outcome: "unknown", reason: "identity_candidate_check_failed", detail: String(error?.message ?? ""), applied: false };
   }
