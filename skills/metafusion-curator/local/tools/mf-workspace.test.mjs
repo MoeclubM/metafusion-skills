@@ -322,6 +322,7 @@ test("known transaction busy preserves commit and permits explicit same-ID push"
   const result = await runWorkspace("push", { ...f.opts, requestFn: busy, apply: true });
   assert.equal(result.applied, false);
   assert.equal(result.reason, "push_busy_keep_same_commit");
+  assert.equal(result.result.error, "transaction_busy");
   assert.equal(f.read(".mf/state.json").pending.id, sealed.commit_id);
   assert.equal(f.read(".mf/state.json").pending.outcome, "rejected");
   const retry = await runWorkspace("push", { ...f.opts, apply: true });

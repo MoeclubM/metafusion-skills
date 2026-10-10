@@ -107,7 +107,7 @@ export function publicFailure(response) {
     ],
     429: ["rate_limited"],
     500: ["internal_error", "database_error"],
-    503: ["auth_unavailable", "search_unavailable", "commit_busy"],
+    503: ["auth_unavailable", "search_unavailable", "transaction_busy"],
   };
   const code = response?.body?.error;
   const valid =
